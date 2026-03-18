@@ -24,8 +24,11 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Fix npm version
+        run: npm install -g npm@10.5.2
+
       - name: Install dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Build
         run: npm run build

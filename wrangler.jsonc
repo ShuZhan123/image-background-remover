@@ -4,5 +4,8 @@
   "pages": {
     "project_name": "image-background-remover",
     "pages_build_output_dir": ".vercel/output/static"
+  },
+  "vars": {
+    "REMOVE_BG_API_KEY": "W3RZe8Sn638kGxcquRDuW72d"
   }
 }

@@ -10,6 +10,7 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
 
 jobs:
   deploy:

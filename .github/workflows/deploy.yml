@@ -8,16 +8,16 @@ on:
     branches:
       - main
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       deployments: write
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
 
     steps:
       - name: Checkout
@@ -38,6 +38,8 @@ jobs:
 
       - name: Build for Cloudflare Pages
         run: pnpm dlx @cloudflare/next-on-pages@1
+        env:
+          REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}
 
       - name: Install wrangler
         run: pnpm add -D wrangler
@@ -47,3 +49,4 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          REMOVE_BG_API_KEY: ${{ secrets.REMOVE_BG_API_KEY }}

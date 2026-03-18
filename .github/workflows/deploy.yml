@@ -10,7 +10,6 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
 jobs:
   deploy:
@@ -39,9 +38,11 @@ jobs:
       - name: Build for Cloudflare Pages
         run: pnpm dlx @cloudflare/next-on-pages@1
 
+      - name: Install wrangler
+        run: pnpm add -D wrangler
+
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CF_API_TOKEN }}
-          accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          command: pages deploy .vercel/output/static --project-name=image-background-remover
+        run: pnpm dlx wrangler pages deploy .vercel/output/static --project-name=image-background-remover
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}

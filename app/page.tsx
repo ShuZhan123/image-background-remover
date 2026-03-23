@@ -1,11 +1,14 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useSession, signOut } from "next-auth/react";
+import Link from "next/link";
 
 type Status = "idle" | "processing" | "done" | "error";
 
 export default function Home() {
-  const [status, setStatus] = useState<Status>("idle");
+  const { data: session, status: sessionStatus } = useSession();
+  const [processingStatus, setProcessingStatus] = useState<Status>("idle");
   const [originalUrl, setOriginalUrl] = useState<string>("");
   const [resultUrl, setResultUrl] = useState<string>("");
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
@@ -17,19 +20,19 @@ export default function Home() {
     // 校验格式
     if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
       setErrorMsg("不支持的格式，请上传 JPG / PNG / WebP");
-      setStatus("error");
+      setProcessingStatus("error");
       return;
     }
     // 校验大小
     if (file.size > 10 * 1024 * 1024) {
       setErrorMsg("文件超过 10MB，请压缩后重试");
-      setStatus("error");
+      setProcessingStatus("error");
       return;
     }
 
     setOriginalName(file.name);
     setOriginalUrl(URL.createObjectURL(file));
-    setStatus("processing");
+    setProcessingStatus("processing");
 
     try {
       const form = new FormData();
@@ -49,11 +52,11 @@ export default function Home() {
       const blob = await res.blob();
       setResultBlob(blob);
       setResultUrl(URL.createObjectURL(blob));
-      setStatus("done");
+      setProcessingStatus("done");
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "未知错误";
       setErrorMsg(msg.includes("timeout") ? "处理超时（30s），请重试" : msg);
-      setStatus("error");
+      setProcessingStatus("error");
     }
   }, []);
 
@@ -78,7 +81,7 @@ export default function Home() {
   };
 
   const handleReset = () => {
-    setStatus("idle");
+    setProcessingStatus("idle");
     setOriginalUrl("");
     setResultUrl("");
     setResultBlob(null);
@@ -88,18 +91,55 @@ export default function Home() {
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center px-4 py-12">
+      {/* 用户信息栏 */}
+      {sessionStatus === "authenticated" && session?.user ? (
+        <div className="w-full max-w-3xl mb-6 flex items-center justify-between bg-white rounded-xl p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            {session.user.image && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={session.user.image}
+                alt={session.user.name || ""}
+                className="w-10 h-10 rounded-full"
+              />
+            )}
+            <div>
+              <p className="font-medium text-gray-900">{session.user.name}</p>
+              <p className="text-sm text-gray-500">{session.user.email}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => signOut({ callbackUrl: "/" })}
+            className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            退出登录
+          </button>
+        </div>
+      ) : sessionStatus === "unauthenticated" ? (
+        <div className="w-full max-w-3xl mb-6 flex items-center justify-end">
+          <Link
+            href="/auth/signin"
+            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Google 登录
+          </Link>
+        </div>
+      ) : null}
+
       {/* Header */}
       <div className="text-center mb-10">
         <h1 className="text-4xl font-bold text-gray-900 mb-3">
           🖼️ Background Remover
         </h1>
         <p className="text-gray-500 text-lg">
-          一键去除图片背景，免费、快速、无需注册
+          一键去除图片背景，免费、快速
+          {sessionStatus === "authenticated" ? "" : "无需注册"}
         </p>
       </div>
 
+      {/* 如果未登录，仍然可以使用（保持原有逻辑，但可以选择登录保存历史 */}
       {/* 状态一：上传 */}
-      {status === "idle" && (
+      {processingStatus === "idle" && (
         <label
           className={`w-full max-w-lg border-2 border-dashed rounded-2xl p-12 flex flex-col items-center gap-4 cursor-pointer transition-colors ${
             dragging
@@ -126,7 +166,7 @@ export default function Home() {
       )}
 
       {/* 状态二：处理中 */}
-      {status === "processing" && (
+      {processingStatus === "processing" && (
         <div className="w-full max-w-lg bg-white rounded-2xl p-12 flex flex-col items-center gap-6 shadow-sm">
           <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-gray-600 font-medium">正在去除背景，请稍候...</p>
@@ -134,7 +174,7 @@ export default function Home() {
       )}
 
       {/* 状态三：完成 */}
-      {status === "done" && (
+      {processingStatus === "done" && (
         <div className="w-full max-w-3xl flex flex-col items-center gap-6">
           <div className="grid grid-cols-2 gap-4 w-full">
             <div className="flex flex-col gap-2">
@@ -174,7 +214,7 @@ export default function Home() {
       )}
 
       {/* 状态四：错误 */}
-      {status === "error" && (
+      {processingStatus === "error" && (
         <div className="w-full max-w-lg bg-red-50 border border-red-200 rounded-2xl p-8 flex flex-col items-center gap-4">
           <span className="text-4xl">⚠️</span>
           <p className="text-red-700 font-medium text-center">{errorMsg}</p>

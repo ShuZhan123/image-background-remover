@@ -20,26 +20,33 @@ declare module "next-auth" {
   }
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  providers: [
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    }),
-  ],
-  adapter: D1Adapter(process.env.DB as unknown as D1Database),
-  session: {
-    strategy: "database",
-  },
-  pages: {
-    signIn: "/auth/signin",
-  },
-  callbacks: {
-    session({ session, user }) {
-      if (session.user) {
-        session.user.id = user.id as string;
-      }
-      return session;
+export function createAuth(db: D1Database) {
+  return NextAuth({
+    providers: [
+      Google({
+        clientId: process.env.GOOGLE_CLIENT_ID!,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      }),
+    ],
+    adapter: D1Adapter(db),
+    session: {
+      strategy: "database",
     },
-  },
-});
+    pages: {
+      signIn: "/auth/signin",
+    },
+    callbacks: {
+      session({ session, user }) {
+        if (session.user) {
+          session.user.id = user.id as string;
+        }
+        return session;
+      },
+    },
+  });
+}
+
+// For local development fallback
+export const { handlers, auth, signIn, signOut } = createAuth(
+  (process.env.DB as unknown as D1Database)
+);

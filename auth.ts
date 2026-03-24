@@ -1,6 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
-import { D1Adapter } from "@auth/d1-adapter";
+import type { NextRequest } from "next/server";
 
 declare global {
   type D1Database = {
@@ -20,12 +20,58 @@ declare module "next-auth" {
   }
 }
 
-let authInstance: ReturnType<typeof NextAuth> | undefined;
+// Get DB from globalThis (Cloudflare Pages binding)
+function getDB(): D1Database {
+  // @ts-ignore
+  if (typeof globalThis !== 'undefined' && globalThis.DB) {
+    // @ts-ignore
+    return globalThis.DB as D1Database;
+  }
+  // @ts-ignore
+  if (typeof self !== 'undefined' && self.DB) {
+    // @ts-ignore
+    return self.DB as D1Database;
+  }
+  throw new Error("Cannot find DB binding on globalThis. Check your Cloudflare Pages binding configuration.");
+}
 
-function getAuth(db: D1Database) {
-  if (!authInstance) {
-    authInstance = NextAuth({
-      adapter: D1Adapter(db),
+// Find or create user in D1 database when signing in
+async function findOrCreateUser(profile: {
+  email?: string | null;
+  name?: string | null;
+  image?: string | null;
+}) {
+  const db = getDB();
+  const email = profile.email || "";
+  
+  // Try to find existing user by email
+  const result = await db.prepare(`SELECT * FROM users WHERE email = ?`).bind(email).first();
+  
+  if (result) {
+    // User exists, return it
+    return { id: String(result.id), ...result };
+  }
+  
+  // User doesn't exist, create new
+  const { success } = await db.prepare(`
+    INSERT INTO users (name, email, email_verified, image)
+    VALUES (?, ?, CURRENT_TIMESTAMP, ?)
+  `).bind(profile.name || null, email, profile.image || null).run();
+  
+  if (!success) {
+    throw new Error("Failed to create user in D1 database");
+  }
+  
+  // Get the newly created user
+  const newUser = await db.prepare(`SELECT * FROM users WHERE email = ?`).bind(email).first();
+  return { id: String(newUser.id), ...newUser };
+}
+
+let cachedAuth: ReturnType<typeof NextAuth> | undefined;
+
+function getAuth() {
+  if (!cachedAuth) {
+    cachedAuth = NextAuth({
       providers: [
         Google({
           clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -39,9 +85,16 @@ function getAuth(db: D1Database) {
         signIn: "/auth/signin",
       },
       callbacks: {
-        async jwt({ token, user }) {
-          if (user?.id) {
-            // @ts-ignore
+        async signIn({ profile }) {
+          if (!profile) return true;
+          // Store user in D1
+          await findOrCreateUser(profile);
+          return true;
+        },
+        async jwt({ token, profile }) {
+          if (profile) {
+            // Find user and add id to token
+            const user = await findOrCreateUser(profile);
             token.id = user.id;
           }
           return token;
@@ -49,7 +102,7 @@ function getAuth(db: D1Database) {
         async session({ session, token }) {
           if (session.user) {
             // @ts-ignore
-            session.user.id = token.id;
+            session.user.id = token.id as string;
           }
           return session;
         },
@@ -57,15 +110,19 @@ function getAuth(db: D1Database) {
       debug: true,
     });
   }
-  return authInstance;
+  return cachedAuth;
 }
 
-export function getHandlers(db: D1Database) {
-  return getAuth(db).handlers;
+export async function GET(request: NextRequest) {
+  const { handlers } = getAuth();
+  return handlers.GET(request);
 }
 
-export const auth = () => {
-  throw new Error("auth() should not be used in App Router API route. DB is obtained from request.");
-};
+export async function POST(request: NextRequest) {
+  const { handlers } = getAuth();
+  return handlers.POST(request);
+}
 
-export {};
+export const auth = () => getAuth().auth();
+export const signIn = () => getAuth().signIn();
+export const signOut = () => getAuth().signOut();

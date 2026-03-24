@@ -84,6 +84,7 @@ function getAuth() {
       pages: {
         signIn: "/auth/signin",
       },
+      trustHost: true,
       callbacks: {
         async signIn({ profile }) {
           if (!profile) return true;

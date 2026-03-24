@@ -1,117 +1,45 @@
-import NextAuth from "next-auth";
-import Google from "next-auth/providers/google";
-import { D1Adapter } from "@auth/d1-adapter";
 import type { NextRequest } from "next/server";
-
-// Type declarations
-declare module "next-auth" {
-  interface Session {
-    user: {
-      id: string;
-      name?: string | null;
-      email?: string | null;
-      image?: string | null;
-    };
-  }
-}
+import { getHandlers } from "../../../../auth";
 
 // In Cloudflare Pages with Next.js Edge Runtime, D1 bindings are available via:
-// 1. request.context.env - for Cloudflare Pages Functions / middleware
-// 2. globalThis - when configured via Pages deployment with wrangler
-// 3. (request as any).cf.env - some configurations expose it here
+// https://developers.cloudflare.com/pages/functions/bindings/#how-bindings-are-exposed
 function getDBFromRequest(request: NextRequest): D1Database {
+  // Cloudflare Pages Functions for Next.js exposes env via request.context.env
   // @ts-ignore
-  if (request.context && request.context.env && request.context.env.DB) {
+  if (request.context?.env?.DB !== undefined) {
     // @ts-ignore
     return request.context.env.DB as D1Database;
   }
+  // Fallback to cf.env
   // @ts-ignore
-  if ((request as any).cf && (request as any).cf.env && (request as any).cf.env.DB) {
+  if (request.cf?.env?.DB !== undefined) {
     // @ts-ignore
-    return (request as any).cf.env.DB as D1Database;
+    return request.cf.env.DB as D1Database;
   }
+  // Fallback to global
   // @ts-ignore
-  if (typeof globalThis !== 'undefined' && globalThis.DB) {
+  if (typeof globalThis !== 'undefined' && globalThis.DB !== undefined) {
     // @ts-ignore
     return globalThis.DB as D1Database;
   }
+  // Fallback to self
   // @ts-ignore
-  if (typeof self !== 'undefined' && self.DB) {
+  if (typeof self !== 'undefined' && self.DB !== undefined) {
     // @ts-ignore
     return self.DB as D1Database;
   }
-  throw new Error("Cannot find D1 binding 'DB' on the request object or globalThis. Please check your Cloudflare Pages binding configuration.");
+  throw new Error("Cannot find D1 binding 'DB'. Please check:\n1. Did you create the D1 database?\n2. Did you bind it to your Cloudflare Pages project with name 'DB'?\n3. Is the binding correctly configured in your Cloudflare dashboard?");
 }
 
 export async function GET(request: NextRequest) {
   const db = getDBFromRequest(request);
-  const { handlers } = NextAuth({
-    providers: [
-      Google({
-        clientId: process.env.GOOGLE_CLIENT_ID!,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      }),
-    ],
-    adapter: D1Adapter(db),
-    session: {
-      strategy: "jwt",
-    },
-    pages: {
-      signIn: "/auth/signin",
-    },
-    callbacks: {
-      async jwt({ token, user }) {
-        if (user) {
-          // @ts-ignore
-          token.id = user.id as string;
-        }
-        return token;
-      },
-      async session({ session, token }) {
-        if (session.user) {
-          // @ts-ignore
-          session.user.id = token.id as string;
-        }
-        return session;
-      },
-    },
-  });
+  const handlers = getHandlers(db);
   return handlers.GET(request);
 }
 
 export async function POST(request: NextRequest) {
   const db = getDBFromRequest(request);
-  const { handlers } = NextAuth({
-    providers: [
-      Google({
-        clientId: process.env.GOOGLE_CLIENT_ID!,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      }),
-    ],
-    adapter: D1Adapter(db),
-    session: {
-      strategy: "jwt",
-    },
-    pages: {
-      signIn: "/auth/signin",
-    },
-    callbacks: {
-      async jwt({ token, user }) {
-        if (user) {
-          // @ts-ignore
-          token.id = user.id as string;
-        }
-        return token;
-      },
-      async session({ session, token }) {
-        if (session.user) {
-          // @ts-ignore
-          session.user.id = token.id as string;
-        }
-        return session;
-      },
-    },
-  });
+  const handlers = getHandlers(db);
   return handlers.POST(request);
 }
 

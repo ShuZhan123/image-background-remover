@@ -86,17 +86,19 @@ function getAuth() {
       },
       trustHost: true,
       callbacks: {
-        async signIn({ profile }) {
-          if (!profile) return true;
+        async signIn({ user, profile }) {
+          const userProfile = profile || user;
+          if (!userProfile || !userProfile.email) return true;
           // Store user in D1
-          await findOrCreateUser(profile);
+          await findOrCreateUser(userProfile);
           return true;
         },
-        async jwt({ token, profile }) {
-          if (profile) {
+        async jwt({ token, user, profile }) {
+          const userProfile = profile || user;
+          if (userProfile && userProfile.email) {
             // Find user and add id to token
-            const user = await findOrCreateUser(profile);
-            token.id = user.id;
+            const dbUser = await findOrCreateUser(userProfile);
+            token.id = dbUser.id;
           }
           return token;
         },

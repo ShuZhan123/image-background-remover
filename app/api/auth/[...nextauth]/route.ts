@@ -1,45 +1,83 @@
+import NextAuth from "next-auth";
+import Google from "next-auth/providers/google";
+import { D1Adapter } from "@auth/d1-adapter";
 import type { NextRequest } from "next/server";
-import { getHandlers } from "../../../../auth";
 
-// In Cloudflare Pages with Next.js Edge Runtime, D1 bindings are available via:
-// https://developers.cloudflare.com/pages/functions/bindings/#how-bindings-are-exposed
-function getDBFromRequest(request: NextRequest): D1Database {
-  // Cloudflare Pages Functions for Next.js exposes env via request.context.env
-  // @ts-ignore
-  if (request.context?.env?.DB !== undefined) {
-    // @ts-ignore
-    return request.context.env.DB as D1Database;
+declare module "next-auth" {
+  interface Session {
+    user: {
+      id: string;
+      name?: string | null;
+      email?: string | null;
+      image?: string | null;
+    };
   }
-  // Fallback to cf.env
+}
+
+// In Cloudflare Pages with Next.js, all bindings are on globalThis
+// Let's just get it directly from globalThis when handling the request
+function getDB(): D1Database {
   // @ts-ignore
-  if (request.cf?.env?.DB !== undefined) {
-    // @ts-ignore
-    return request.cf.env.DB as D1Database;
-  }
-  // Fallback to global
-  // @ts-ignore
-  if (typeof globalThis !== 'undefined' && globalThis.DB !== undefined) {
+  if (typeof globalThis !== 'undefined' && globalThis.DB) {
     // @ts-ignore
     return globalThis.DB as D1Database;
   }
-  // Fallback to self
   // @ts-ignore
-  if (typeof self !== 'undefined' && self.DB !== undefined) {
+  if (typeof self !== 'undefined' && self.DB) {
     // @ts-ignore
     return self.DB as D1Database;
   }
-  throw new Error("Cannot find D1 binding 'DB'. Please check:\n1. Did you create the D1 database?\n2. Did you bind it to your Cloudflare Pages project with name 'DB'?\n3. Is the binding correctly configured in your Cloudflare dashboard?");
+  throw new Error("Cannot find DB binding on globalThis. Please check that you have correctly bound the D1 database in Cloudflare Pages settings.");
+}
+
+let cachedAuth: ReturnType<typeof NextAuth> | undefined;
+
+function getAuth() {
+  if (!cachedAuth) {
+    const db = getDB();
+    cachedAuth = NextAuth({
+      adapter: D1Adapter(db),
+      providers: [
+        Google({
+          clientId: process.env.GOOGLE_CLIENT_ID!,
+          clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+        }),
+      ],
+      session: {
+        strategy: "jwt",
+      },
+      pages: {
+        signIn: "/auth/signin",
+      },
+      callbacks: {
+        async jwt({ token, user }) {
+          if (user?.id) {
+            // @ts-ignore
+            token.id = user.id;
+          }
+          return token;
+        },
+        async session({ session, token }) {
+          if (session.user) {
+            // @ts-ignore
+            session.user.id = token.id;
+          }
+          return session;
+        },
+      },
+      debug: true,
+    });
+  }
+  return cachedAuth;
 }
 
 export async function GET(request: NextRequest) {
-  const db = getDBFromRequest(request);
-  const handlers = getHandlers(db);
+  const { handlers } = getAuth();
   return handlers.GET(request);
 }
 
 export async function POST(request: NextRequest) {
-  const db = getDBFromRequest(request);
-  const handlers = getHandlers(db);
+  const { handlers } = getAuth();
   return handlers.POST(request);
 }
 

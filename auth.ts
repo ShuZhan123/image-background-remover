@@ -43,77 +43,73 @@ async function findOrCreateUser(profile: {
 }) {
   const db = getDB();
   const email = profile.email || "";
-  
+
   // Try to find existing user by email
   const result = await db.prepare(`SELECT * FROM users WHERE email = ?`).bind(email).first();
-  
+
   if (result) {
     // User exists, return it
     return { id: String(result.id), ...result };
   }
-  
+
   // User doesn't exist, create new
   const { success } = await db.prepare(`
     INSERT INTO users (name, email, email_verified, image)
     VALUES (?, ?, CURRENT_TIMESTAMP, ?)
   `).bind(profile.name || null, email, profile.image || null).run();
-  
+
   if (!success) {
     throw new Error("Failed to create user in D1 database");
   }
-  
+
   // Get the newly created user
   const newUser = await db.prepare(`SELECT * FROM users WHERE email = ?`).bind(email).first();
   return { id: String(newUser.id), ...newUser };
 }
 
-let cachedAuth: ReturnType<typeof NextAuth> | undefined;
-
-function getAuth() {
-  if (!cachedAuth) {
-    cachedAuth = NextAuth({
-      providers: [
-        Google({
-          clientId: process.env.GOOGLE_CLIENT_ID!,
-          clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-        }),
-      ],
-      session: {
-        strategy: "jwt",
+export function getAuth() {
+  return NextAuth({
+    providers: [
+      Google({
+        clientId: process.env.GOOGLE_CLIENT_ID!,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      }),
+    ],
+    session: {
+      strategy: "jwt",
+    },
+    pages: {
+      signIn: "/auth/signin",
+    },
+    trustHost: true,
+    useSecureCookies: true,
+    callbacks: {
+      async signIn({ user, profile }) {
+        const userProfile = profile || user;
+        if (!userProfile || !userProfile.email) return true;
+        // Store user in D1
+        await findOrCreateUser(userProfile);
+        return true;
       },
-      pages: {
-        signIn: "/auth/signin",
+      async jwt({ token, user, profile }) {
+        const userProfile = profile || user;
+        if (userProfile && userProfile.email) {
+          // Find user and add id to token
+          const dbUser = await findOrCreateUser(userProfile);
+          token.id = dbUser.id;
+        }
+        return token;
       },
-      trustHost: true,
-      callbacks: {
-        async signIn({ user, profile }) {
-          const userProfile = profile || user;
-          if (!userProfile || !userProfile.email) return true;
-          // Store user in D1
-          await findOrCreateUser(userProfile);
-          return true;
-        },
-        async jwt({ token, user, profile }) {
-          const userProfile = profile || user;
-          if (userProfile && userProfile.email) {
-            // Find user and add id to token
-            const dbUser = await findOrCreateUser(userProfile);
-            token.id = dbUser.id;
-          }
-          return token;
-        },
-        async session({ session, token }) {
-          if (session.user) {
-            // @ts-ignore
-            session.user.id = token.id as string;
-          }
-          return session;
-        },
+      async session({ session, token }) {
+        if (session.user) {
+          // @ts-ignore
+          session.user.id = token.id as string;
+        }
+        return session;
       },
-      debug: true,
-    });
-  }
-  return cachedAuth;
+    },
+    debug: process.env.NODE_ENV === "development",
+  });
 }
 
 export async function GET(request: NextRequest) {

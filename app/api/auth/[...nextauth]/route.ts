@@ -3,13 +3,7 @@ import Google from "next-auth/providers/google";
 import { D1Adapter } from "@auth/d1-adapter";
 import type { NextRequest } from "next/server";
 
-declare global {
-  type D1Database = {
-    prepare: (query: string) => any;
-    exec: (query: string) => any;
-  };
-}
-
+// Type declarations
 declare module "next-auth" {
   interface Session {
     user: {
@@ -18,12 +12,6 @@ declare module "next-auth" {
       email?: string | null;
       image?: string | null;
     };
-  }
-}
-
-declare module "next-auth/jwt" {
-  interface JWT {
-    id: string;
   }
 }
 
@@ -74,13 +62,15 @@ export async function GET(request: NextRequest) {
     callbacks: {
       async jwt({ token, user }) {
         if (user) {
+          // @ts-ignore
           token.id = user.id as string;
         }
         return token;
       },
       async session({ session, token }) {
         if (session.user) {
-          session.user.id = token.id;
+          // @ts-ignore
+          session.user.id = token.id as string;
         }
         return session;
       },
@@ -108,13 +98,15 @@ export async function POST(request: NextRequest) {
     callbacks: {
       async jwt({ token, user }) {
         if (user) {
+          // @ts-ignore
           token.id = user.id as string;
         }
         return token;
       },
       async session({ session, token }) {
         if (session.user) {
-          session.user.id = token.id;
+          // @ts-ignore
+          session.user.id = token.id as string;
         }
         return session;
       },

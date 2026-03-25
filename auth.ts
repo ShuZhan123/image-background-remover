@@ -1,11 +1,11 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import { D1Adapter } from "@auth/d1-adapter";
 
 declare global {
-  type D1Database = {
-    prepare: (query: string) => any;
-    exec: (query: string) => any;
-  };
+  interface CloudflareEnv {
+    DB: D1Database;
+  }
 }
 
 declare module "next-auth" {
@@ -34,39 +34,8 @@ function getDB(): D1Database {
   throw new Error("Cannot find DB binding on globalThis. Check your Cloudflare Pages binding configuration.");
 }
 
-// Find or create user in D1 database when signing in
-async function findOrCreateUser(profile: {
-  email?: string | null;
-  name?: string | null;
-  picture?: string | null;
-}) {
-  const db = getDB();
-  const email = profile.email || "";
-
-  // Try to find existing user by email
-  const result = await db.prepare(`SELECT * FROM users WHERE email = ?`).bind(email).first();
-
-  if (result) {
-    // User exists, return it
-    return { id: String(result.id), ...result };
-  }
-
-  // User doesn't exist, create new
-  const { success } = await db.prepare(`
-    INSERT INTO users (name, email, email_verified, image)
-    VALUES (?, ?, CURRENT_TIMESTAMP, ?)
-  `).bind(profile.name || null, email, profile.picture || null).run();
-
-  if (!success) {
-    throw new Error("Failed to create user in D1 database");
-  }
-
-  // Get the newly created user
-  const newUser = await db.prepare(`SELECT * FROM users WHERE email = ?`).bind(email).first();
-  return { id: String(newUser.id), ...newUser };
-}
-
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  adapter: D1Adapter(getDB()),
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -90,16 +59,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   useSecureCookies: true,
   callbacks: {
-    async signIn({ profile }) {
-      if (!profile) return true;
-      // Store user in D1
-      await findOrCreateUser(profile);
-      return true;
-    },
-    async jwt({ token, profile }) {
-      if (profile) {
-        // Find user and add id to token
-        const user = await findOrCreateUser(profile as any);
+    async jwt({ token, user }) {
+      if (user) {
         token.id = user.id;
       }
       return token;

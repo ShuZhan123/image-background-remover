@@ -80,14 +80,14 @@ function getAuth() {
   });
 }
 
-export async function GET(...args: any[]) {
+export async function GET(request: Request) {
   const { handlers } = getAuth();
-  return handlers.GET(...args);
+  return handlers.GET(request);
 }
 
-export async function POST(...args: any[]) {
+export async function POST(request: Request) {
   const { handlers } = getAuth();
-  return handlers.POST(...args);
+  return handlers.POST(request);
 }
 
 export const auth = () => getAuth().auth();

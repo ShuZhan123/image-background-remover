@@ -7,9 +7,6 @@ declare global {
     prepare: (query: string) => any;
     exec: (query: string) => any;
   };
-  interface CloudflareEnv {
-    DB: D1Database;
-  }
 }
 
 declare module "next-auth" {
@@ -38,9 +35,11 @@ function getDB(): D1Database {
   throw new Error("Cannot find DB binding on globalThis. Check your Cloudflare Pages binding configuration.");
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: D1Adapter(getDB()),
-  providers: [
+// Lazy initialize auth to avoid build-time DB access
+function getAuth() {
+  return NextAuth({
+    adapter: D1Adapter(getDB()),
+    providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
@@ -78,4 +77,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
   debug: true,
-});
+  });
+}
+
+export async function GET(...args: any[]) {
+  const { handlers } = getAuth();
+  return handlers.GET(...args);
+}
+
+export async function POST(...args: any[]) {
+  const { handlers } = getAuth();
+  return handlers.POST(...args);
+}
+
+export const auth = () => getAuth().auth();
+export const signIn = () => getAuth().signIn();
+export const signOut = () => getAuth().signOut();

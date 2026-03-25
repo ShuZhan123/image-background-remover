@@ -226,6 +226,13 @@ export default function Home() {
           </button>
         </div>
       )}
+
+      {/* Footer with privacy policy link - required for Google OAuth verification */}
+      <footer className="mt-16 text-center text-sm text-gray-500">
+        <p>
+          © 2026 Background Remover · <Link href="/privacy" className="underline hover:text-gray-700">Privacy Policy</Link>
+        </p>
+      </footer>
     </main>
   );
 }

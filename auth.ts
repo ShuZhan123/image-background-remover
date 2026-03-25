@@ -21,21 +21,37 @@ declare module "next-auth" {
   }
 }
 
-// In Cloudflare Pages/Edge Functions, DB is on request.env, not global
-// We need to create a new D1Adapter that gets DB from request
-function authWithDB(request: NextRequest) {
-  // @ts-ignore - request.env is where Cloudflare binds DB
-  const db = request.env.DB as D1Database;
+// In Cloudflare Pages/Edge Functions:
+// - DB binding is on request.env.DB
+// - All environment variables are also on request.env
+// process.env doesn't work in edge runtime!
+function authWithRequest(request: NextRequest) {
+  // @ts-ignore - everything is on request.env in Cloudflare Pages
+  const env = request.env as {
+    DB: D1Database;
+    GOOGLE_CLIENT_ID: string;
+    GOOGLE_CLIENT_SECRET: string;
+    NEXTAUTH_URL: string;
+    NEXTAUTH_SECRET: string;
+  };
+
+  const db = env.DB;
   if (!db) {
     throw new Error("Cannot find DB binding on request.env. Check your Cloudflare Pages binding configuration.");
+  }
+
+  const clientId = env.GOOGLE_CLIENT_ID;
+  const clientSecret = env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error("GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET not found in request.env. Check your environment variables in Cloudflare Pages.");
   }
 
   return NextAuth({
     adapter: D1Adapter(db),
     providers: [
       Google({
-        clientId: process.env.GOOGLE_CLIENT_ID!,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+        clientId,
+        clientSecret,
         authorization: {
           params: {
             prompt: "select_account consent",
@@ -54,6 +70,16 @@ function authWithDB(request: NextRequest) {
     },
     trustHost: true,
     useSecureCookies: true,
+    cookies: {
+      csrfToken: {
+        name: "next-auth.csrf-token",
+        secure: true,
+      },
+      callbackUrl: {
+        name: "next-auth.callback-url",
+        secure: true,
+      },
+    },
     callbacks: {
       async jwt({ token, user }) {
         if (user) {
@@ -75,7 +101,7 @@ function authWithDB(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const { handlers } = authWithDB(request);
+    const { handlers } = authWithRequest(request);
     return await handlers.GET(request);
   } catch (error) {
     console.error("Auth GET error:", error);
@@ -85,7 +111,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { handlers } = authWithDB(request);
+    const { handlers } = authWithRequest(request);
     return await handlers.POST(request);
   } catch (error) {
     console.error("Auth POST error:", error);
@@ -93,7 +119,8 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// For client-side signIn/signOut
+// For client-side signIn/signOut - client doesn't have request.env
+// Use process.env as fallback, which works for build/client
 export const { auth, signIn, signOut } = NextAuth({
   providers: [
     Google({

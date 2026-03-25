@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { D1Adapter } from "@auth/d1-adapter";
+import type { NextRequest } from "next/server";
 
 declare global {
   type D1Database = {
@@ -80,12 +81,12 @@ function getAuth() {
   });
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const { handlers } = getAuth();
   return handlers.GET(request);
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   const { handlers } = getAuth();
   return handlers.POST(request);
 }

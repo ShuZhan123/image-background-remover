@@ -3,6 +3,10 @@ import Google from "next-auth/providers/google";
 import { D1Adapter } from "@auth/d1-adapter";
 
 declare global {
+  type D1Database = {
+    prepare: (query: string) => any;
+    exec: (query: string) => any;
+  };
   interface CloudflareEnv {
     DB: D1Database;
   }

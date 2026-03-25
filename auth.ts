@@ -74,13 +74,23 @@ function authWithDB(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const { handlers } = authWithDB(request);
-  return handlers.GET(request);
+  try {
+    const { handlers } = authWithDB(request);
+    return await handlers.GET(request);
+  } catch (error) {
+    console.error("Auth GET error:", error);
+    throw error;
+  }
 }
 
 export async function POST(request: NextRequest) {
-  const { handlers } = authWithDB(request);
-  return handlers.POST(request);
+  try {
+    const { handlers } = authWithDB(request);
+    return await handlers.POST(request);
+  } catch (error) {
+    console.error("Auth POST error:", error);
+    throw error;
+  }
 }
 
 // For client-side signIn/signOut

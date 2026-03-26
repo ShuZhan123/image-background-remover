@@ -1,7 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { D1Adapter } from "@auth/d1-adapter";
-import { getCloudflareContext } from "@opennextjs/cloudflare";
 import type { JWT } from "next-auth/jwt";
 import type { Session, User } from "next-auth";
 
@@ -23,33 +22,17 @@ declare module "next-auth" {
   }
 }
 
-// Get DB from Cloudflare Context correctly
-const getDB = () => {
-  const ctx = getCloudflareContext();
-  return (ctx.env as any).DB as D1Database;
-};
-
-// Get env variables
-const getEnv = () => {
-  const ctx = getCloudflareContext();
-  return {
-    DB: getDB(),
-    GOOGLE_CLIENT_ID: (ctx.env as any).GOOGLE_CLIENT_ID as string,
-    GOOGLE_CLIENT_SECRET: (ctx.env as any).GOOGLE_CLIENT_SECRET as string,
-    NEXTAUTH_SECRET: (ctx.env as any).NEXTAUTH_SECRET as string,
-    NEXTAUTH_URL: (ctx.env as any).NEXTAUTH_URL as string,
-  };
-};
+// Cloudflare Pages 会把所有环境变量（包括 D1 bindings）放到 process.env 中
+// 参见 Cloudflare Pages 文档：https://developers.cloudflare.com/pages/platform/functions/bindings/
+const db = (process.env as any).DB as D1Database;
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  get adapter() {
-    return D1Adapter(getDB());
-  },
-  secret: process.env.NEXTAUTH_SECRET || getEnv().NEXTAUTH_SECRET,
+  adapter: D1Adapter(db),
+  secret: process.env.NEXTAUTH_SECRET,
   providers: [
     Google({
-      clientId: process.env.GOOGLE_CLIENT_ID || getEnv().GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || getEnv().GOOGLE_CLIENT_SECRET,
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
           prompt: "select_account consent",

@@ -28,6 +28,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: D1Adapter({
     db: (process.env as any).DB,
   }),
+  secret: process.env.NEXTAUTH_SECRET,
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,

@@ -1,15 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
-import { D1Adapter } from "@auth/d1-adapter";
 import type { JWT } from "next-auth/jwt";
 import type { Session, User } from "next-auth";
-
-declare global {
-  type D1Database = {
-    prepare: (query: string) => any;
-    exec: (query: string) => any;
-  };
-}
 
 declare module "next-auth" {
   interface Session {
@@ -22,10 +14,8 @@ declare module "next-auth" {
   }
 }
 
-// In Cloudflare Pages, D1 bindings are NOT available on process.env at build time
-// They are only available at runtime on the request object
-// So we need to use getter to get it lazily
-const config = {
+// 临时先去掉 D1 adapter 让登录跑通，确认OAuth配置没问题后再加回去
+export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -41,11 +31,10 @@ const config = {
     }),
   ],
   session: {
-    strategy: "jwt" as const,
+    strategy: "jwt",
   },
   pages: {
     signIn: "/auth/signin",
-    error: "/auth/signin",
   },
   trustHost: true,
   useSecureCookies: true,
@@ -66,24 +55,4 @@ const config = {
     },
   },
   debug: true,
-};
-
-// Lazy get adapter because DB is only available at runtime on Cloudflare Pages
-// @ts-ignore - DB binding is injected by Cloudflare Pages at runtime
-const getAdapter = () => {
-  const db = (typeof process !== "undefined" && (process.env as any).DB) as D1Database;
-  if (!db) {
-    console.error("⚠️  DB binding not found on process.env");
-    console.error("   Check that binding name is exactly: DB (uppercase)");
-    return undefined;
-  }
-  console.log("✓ D1 DB found, using D1Adapter");
-  return D1Adapter(db);
-};
-
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  ...config,
-  get adapter() {
-    return getAdapter();
-  },
 });

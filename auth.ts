@@ -21,6 +21,51 @@ declare module "next-auth" {
   }
 }
 
+// 基础配置，不依赖环境变量
+import type { JWT } from "next-auth/jwt";
+import type { Session, User } from "next-auth";
+
+const baseConfig = {
+  session: {
+    strategy: "jwt" as const,
+  },
+  pages: {
+    signIn: "/auth/signin",
+  },
+  trustHost: true,
+  useSecureCookies: true,
+  cookies: {
+    csrfToken: {
+      name: "next-auth.csrf-token",
+      options: {
+        secure: true,
+      },
+    },
+    callbackUrl: {
+      name: "next-auth.callback-url",
+      options: {
+        secure: true,
+      },
+    },
+  },
+  callbacks: {
+    async jwt({ token, user }: { token: JWT; user?: User }) {
+      if (user) {
+        token.id = user.id;
+      }
+      return token;
+    },
+    async session({ session, token }: { session: Session; token: JWT }) {
+      if (session.user) {
+        // @ts-ignore
+        session.user.id = token.id as string;
+      }
+      return session;
+    },
+  },
+  debug: true,
+};
+
 // In Cloudflare Pages/Edge Functions:
 // - DB binding is on request.env.DB
 // - All environment variables are also on request.env
@@ -47,6 +92,7 @@ function authWithRequest(request: NextRequest) {
   }
 
   return NextAuth({
+    ...baseConfig,
     adapter: D1Adapter(db),
     providers: [
       Google({
@@ -62,40 +108,6 @@ function authWithRequest(request: NextRequest) {
         }
       }),
     ],
-    session: {
-      strategy: "jwt",
-    },
-    pages: {
-      signIn: "/auth/signin",
-    },
-    trustHost: true,
-    useSecureCookies: true,
-    cookies: {
-      csrfToken: {
-        name: "next-auth.csrf-token",
-        secure: true,
-      },
-      callbackUrl: {
-        name: "next-auth.callback-url",
-        secure: true,
-      },
-    },
-    callbacks: {
-      async jwt({ token, user }) {
-        if (user) {
-          token.id = user.id;
-        }
-        return token;
-      },
-      async session({ session, token }) {
-        if (session.user) {
-          // @ts-ignore
-          session.user.id = token.id as string;
-        }
-        return session;
-      },
-    },
-    debug: true,
   });
 }
 
@@ -119,13 +131,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// For client-side signIn/signOut - client doesn't have request.env
-// Use process.env as fallback, which works for build/client
-export const { auth, signIn, signOut } = NextAuth({
-  providers: [
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    }),
-  ],
-})
+// For client-side - only export the functions we need, don't initialize at build time
+// Client-side doesn't need actual env vars because it just calls the API
+export * from "next-auth/react";

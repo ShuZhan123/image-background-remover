@@ -90,36 +90,33 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-4 py-12">
-      {/* 用户信息栏 */}
+    <main className="min-h-screen flex flex-col items-center justify-center px-4 py-12 relative">
+      {/* 右上角用户信息/登录按钮 */}
       {sessionStatus === "authenticated" && session?.user ? (
-        <div className="w-full max-w-3xl mb-6 flex items-center justify-between bg-white rounded-xl p-4 shadow-sm">
-          <div className="flex items-center gap-3">
-            {session.user.image && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={session.user.image}
-                alt={session.user.name || ""}
-                className="w-10 h-10 rounded-full"
-              />
-            )}
-            <div>
-              <p className="font-medium text-gray-900">{session.user.name}</p>
-              <p className="text-sm text-gray-500">{session.user.email}</p>
-            </div>
+        <div className="absolute top-4 right-4 flex items-center gap-3 bg-white rounded-xl p-3 shadow-sm">
+          <div className="hidden sm:block">
+            <p className="font-medium text-gray-900 text-sm">{session.user.name}</p>
           </div>
+          {session.user.image && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={session.user.image}
+              alt={session.user.name || ""}
+              className="w-8 h-8 rounded-full"
+            />
+          )}
           <button
             onClick={() => signOut({ callbackUrl: "/" })}
-            className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+            className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
           >
-            退出登录
+            退出
           </button>
         </div>
       ) : sessionStatus === "unauthenticated" ? (
-        <div className="w-full max-w-3xl mb-6 flex items-center justify-end">
+        <div className="absolute top-4 right-4">
           <Link
             href="/auth/signin"
-            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
           >
             Google 登录
           </Link>

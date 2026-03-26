@@ -22,34 +22,10 @@ declare module "next-auth" {
   }
 }
 
-// Debug: check what's available
-console.log("=== Auth Debug ===");
-console.log("process.env.DB exists:", !!((process.env as any).DB));
-console.log("GOOGLE_CLIENT_ID:", process.env.GOOGLE_CLIENT_ID ? "✓ exists" : "✗ missing");
-console.log("GOOGLE_CLIENT_SECRET:", process.env.GOOGLE_CLIENT_SECRET ? "✓ exists" : "✗ missing");
-console.log("NEXTAUTH_SECRET:", process.env.NEXTAUTH_SECRET ? "✓ exists" : "✗ missing");
-console.log("NEXTAUTH_URL:", process.env.NEXTAUTH_URL);
-
-// Cloudflare Pages 会把所有环境变量（包括 D1 bindings）放到 process.env 中
-// 参见 Cloudflare Pages 文档：https://developers.cloudflare.com/pages/platform/functions/bindings/
-const db = (process.env as any).DB as D1Database;
-
-if (!db) {
-  console.error("ERROR: DB binding not found in process.env!");
-  console.error("Please check Cloudflare Pages D1 binding name is exactly 'DB' (uppercase)");
-}
-
-if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-  console.error("ERROR: GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET missing from environment variables!");
-}
-
-if (!process.env.NEXTAUTH_SECRET) {
-  console.error("ERROR: NEXTAUTH_SECRET missing from environment variables!");
-}
-
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: db ? D1Adapter(db) : undefined,
-  secret: process.env.NEXTAUTH_SECRET,
+// In Cloudflare Pages, D1 bindings are NOT available on process.env at build time
+// They are only available at runtime on the request object
+// So we need to use getter to get it lazily
+const config = {
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -65,7 +41,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   session: {
-    strategy: "jwt",
+    strategy: "jwt" as const,
   },
   pages: {
     signIn: "/auth/signin",
@@ -73,6 +49,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   trustHost: true,
   useSecureCookies: true,
+  secret: process.env.NEXTAUTH_SECRET,
   callbacks: {
     async jwt({ token, user }: { token: JWT; user?: User }) {
       if (user) {
@@ -89,4 +66,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
   debug: true,
+};
+
+// Lazy get adapter because DB is only available at runtime on Cloudflare Pages
+// @ts-ignore - DB binding is injected by Cloudflare Pages at runtime
+const getAdapter = () => {
+  const db = (typeof process !== "undefined" && (process.env as any).DB) as D1Database;
+  if (!db) {
+    console.error("⚠️  DB binding not found on process.env");
+    console.error("   Check that binding name is exactly: DB (uppercase)");
+    return undefined;
+  }
+  console.log("✓ D1 DB found, using D1Adapter");
+  return D1Adapter(db);
+};
+
+export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...config,
+  get adapter() {
+    return getAdapter();
+  },
 });

@@ -177,7 +177,7 @@ export default function DashboardPage() {
                 </Link>
               </div>
             )}
-            {quota?.planType !== "free" && (
+            {quota && quota.planType !== "free" && (
               <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
                 <p className="text-sm text-green-800">
                   您当前使用的是 {planNames[quota.planType]}，享有无限次处理。

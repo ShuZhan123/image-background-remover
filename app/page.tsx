@@ -51,7 +51,8 @@ export default function Home() {
   const checkQuota = useCallback(async (): Promise<boolean> => {
     // If user is logged in, check from cached quota
     if (session?.user && quota) {
-      return getRemainingQuota() > 0;
+      const rem = getRemainingQuota();
+      return rem !== null && rem > 0;
     }
     // For unauthenticated, we'll let backend check
     return true;

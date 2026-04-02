@@ -1,5 +1,4 @@
 import { auth } from "../../../../auth";
-import { getD1 } from "@cloudflare/workers-hono";
 
 export async function GET() {
   const session = await auth();
@@ -11,13 +10,14 @@ export async function GET() {
   const userId = Number(session.user.id);
   
   try {
-    // @ts-ignore - D1 binding
-    const db = process.env.DB ? getD1(process.env.DB) : null;
+    // @ts-ignore - D1 binding available on Cloudflare Pages
+    const db = (globalThis as any).env?.DB;
     
     if (!db) {
+      // Fallback for development
       return Response.json({
         freeUsed: 0,
-        freeTotal: 5,
+        freeTotal: 15,
         planType: "free",
         planExpiresAt: null,
       });
@@ -31,7 +31,7 @@ export async function GET() {
     if (!result) {
       return Response.json({
         freeUsed: 0,
-        freeTotal: 5,
+        freeTotal: 15,
         planType: "free",
         planExpiresAt: null,
       });
@@ -39,7 +39,7 @@ export async function GET() {
 
     return Response.json({
       freeUsed: result.quota_free_used || 0,
-      freeTotal: result.quota_free_total || 5,
+      freeTotal: result.quota_free_total || 15,
       planType: result.plan_type || "free",
       planExpiresAt: result.plan_expires_at,
     });

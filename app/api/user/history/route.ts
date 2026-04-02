@@ -1,5 +1,4 @@
 import { auth } from "../../../../auth";
-import { getD1 } from "@cloudflare/workers-hono";
 
 export async function GET() {
   const session = await auth();
@@ -11,10 +10,11 @@ export async function GET() {
   const userId = Number(session.user.id);
   
   try {
-    // @ts-ignore - D1 binding
-    const db = process.env.DB ? getD1(process.env.DB) : null;
+    // @ts-ignore - D1 binding available on Cloudflare Pages
+    const db = (globalThis as any).env?.DB;
     
     if (!db) {
+      // Fallback for development
       return Response.json({ items: [] });
     }
 

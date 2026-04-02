@@ -1,16 +1,18 @@
 "use client";
 
 import { signIn } from "next-auth/react";
-import Image from "next/image";
+import Link from "next/link";
 
 export default function SignIn() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4 bg-gray-50">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-8">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            欢迎登录
-          </h1>
+          <Link href="/" className="inline-block mb-4">
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+              🖼️ Background Remover
+            </h1>
+          </Link>
           <p className="text-gray-500">
             使用Google账号登录 Background Remover
           </p>
@@ -28,6 +30,12 @@ export default function SignIn() {
           </svg>
           <span className="font-medium text-gray-700">使用 Google 登录</span>
         </button>
+
+        <div className="mt-6 text-center">
+          <Link href="/" className="text-sm text-gray-500 hover:text-gray-700">
+            ← 返回首页
+          </Link>
+        </div>
       </div>
     </div>
   );

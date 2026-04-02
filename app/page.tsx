@@ -1,10 +1,16 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 import Link from "next/link";
 
 type Status = "idle" | "processing" | "done" | "error";
+type UserQuota = {
+  freeUsed: number;
+  freeTotal: number;
+  planType: "free" | "pro" | "premium";
+  planExpiresAt: string | null;
+};
 
 export default function Home() {
   const { data: session, status: sessionStatus } = useSession();
@@ -15,6 +21,41 @@ export default function Home() {
   const [originalName, setOriginalName] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [dragging, setDragging] = useState(false);
+  const [quota, setQuota] = useState<UserQuota | null>(null);
+  const [quotaLoading, setQuotaLoading] = useState(false);
+
+  // Fetch quota when user is authenticated
+  useEffect(() => {
+    if (sessionStatus === "authenticated") {
+      setQuotaLoading(true);
+      fetch("/api/user/quota")
+        .then(res => res.json())
+        .then(data => {
+          setQuota(data);
+          setQuotaLoading(false);
+        })
+        .catch(() => setQuotaLoading(false));
+    } else {
+      // For unauthenticated users, we check quota by IP on backend
+      setQuota(null);
+    }
+  }, [sessionStatus]);
+
+  const getRemainingQuota = () => {
+    if (!quota) return null;
+    return quota.freeTotal - quota.freeUsed;
+  };
+
+  const remaining = getRemainingQuota();
+
+  const checkQuota = useCallback(async (): Promise<boolean> => {
+    // If user is logged in, check from cached quota
+    if (session?.user && quota) {
+      return getRemainingQuota() > 0;
+    }
+    // For unauthenticated, we'll let backend check
+    return true;
+  }, [session, quota]);
 
   const processFile = useCallback(async (file: File) => {
     // 校验格式
@@ -23,9 +64,24 @@ export default function Home() {
       setProcessingStatus("error");
       return;
     }
-    // 校验大小
-    if (file.size > 10 * 1024 * 1024) {
-      setErrorMsg("文件超过 10MB，请压缩后重试");
+
+    // Check max file size based on plan
+    const maxSize = quota?.planType !== "free" ? 25 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      const maxMb = maxSize / (1024 * 1024);
+      setErrorMsg(`文件超过 ${maxMb}MB，${quota?.planType === "free" ? "升级Pro支持更大文件" : "请压缩后重试"}`);
+      setProcessingStatus("error");
+      return;
+    }
+
+    // Check quota
+    const hasQuota = await checkQuota();
+    if (!hasQuota) {
+      if (session?.user) {
+        setErrorMsg("本月免费配额已用完，请升级Pro继续使用");
+      } else {
+        setErrorMsg("今日免费配额已用完，请登录获取更多免费次数，或升级Pro");
+      }
       setProcessingStatus("error");
       return;
     }
@@ -37,6 +93,8 @@ export default function Home() {
     try {
       const form = new FormData();
       form.append("image", file);
+      form.append("fileName", file.name);
+      form.append("fileSize", file.size.toString());
 
       const res = await fetch("/api/remove-bg", {
         method: "POST",
@@ -46,19 +104,37 @@ export default function Home() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "处理失败，请稍后重试");
+        if (data.code === "QUOTA_EXCEEDED") {
+          if (session?.user) {
+            setErrorMsg("本月配额已用完，请升级Pro继续使用");
+          } else {
+            setErrorMsg("今日配额已用完，请登录获取更多次数");
+          }
+        } else {
+          throw new Error(data.error || "处理失败，请稍后重试");
+        }
+        setProcessingStatus("error");
+        return;
       }
 
       const blob = await res.blob();
       setResultBlob(blob);
       setResultUrl(URL.createObjectURL(blob));
       setProcessingStatus("done");
+
+      // Refresh quota after successful processing
+      if (sessionStatus === "authenticated") {
+        fetch("/api/user/quota")
+          .then(res => res.json())
+          .then(data => setQuota(data))
+          .catch(() => {});
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "未知错误";
       setErrorMsg(msg.includes("timeout") ? "处理超时（30s），请重试" : msg);
       setProcessingStatus("error");
     }
-  }, []);
+  }, [checkQuota, quota, sessionStatus]);
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -94,17 +170,24 @@ export default function Home() {
       {/* 右上角用户信息/登录按钮 */}
       {sessionStatus === "authenticated" && session?.user ? (
         <div className="absolute top-4 right-4 flex items-center gap-3 bg-white rounded-xl p-3 shadow-sm">
-          <div className="hidden sm:block">
-            <p className="font-medium text-gray-900 text-sm">{session.user.name}</p>
-          </div>
-          {session.user.image && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={session.user.image}
-              alt={session.user.name || ""}
-              className="w-8 h-8 rounded-full"
-            />
-          )}
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-3 hover:bg-gray-50 rounded-lg transition-colors p-1"
+          >
+            <div className="hidden sm:block">
+              <p className="font-medium text-gray-900 text-sm">{session.user.name}</p>
+              <p className="text-xs text-gray-500">个人中心</p>
+            </div>
+            {session.user.image && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={session.user.image}
+                alt={session.user.name || ""}
+                className="w-8 h-8 rounded-full"
+              />
+            )}
+          </Link>
+          <div className="h-8 w-px bg-gray-200" />
           <button
             onClick={() => signOut({ callbackUrl: "/" })}
             className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
@@ -132,6 +215,26 @@ export default function Home() {
           一键去除图片背景，免费、快速
           {sessionStatus === "authenticated" ? "" : "无需注册"}
         </p>
+        {/* 显示剩余配额 */}
+        {sessionStatus === "authenticated" && quota && remaining !== null && (
+          <div className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-full">
+            <span className="text-sm text-gray-600">
+              本月剩余 <span className="font-semibold text-gray-900">{remaining}</span> 次
+            </span>
+            {quota.planType === "free" && (
+              <Link href="/pricing" className="text-xs text-blue-600 hover:underline font-medium">
+                升级Pro →
+              </Link>
+            )}
+          </div>
+        )}
+        {!session && (
+          <div className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-full">
+            <span className="text-sm text-gray-600">
+              未登录每日限3次 · <Link href="/auth/signin" className="text-blue-600 hover:underline">登录送每月15次</Link>
+            </span>
+          </div>
+        )}
       </div>
 
       {/* 如果未登录，仍然可以使用（保持原有逻辑，但可以选择登录保存历史 */}
@@ -207,6 +310,20 @@ export default function Home() {
               再处理一张
             </button>
           </div>
+          {/* 升级提示给免费用户 */}
+          {(!session || (quota && quota.planType === "free")) && (
+            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl text-center">
+              <p className="text-sm text-blue-800 mb-2">
+                🚀 开通Pro，每月 {quota?.planType === "free" ? "200次处理" : "200次处理"}，支持批量上传
+              </p>
+              <Link
+                href="/pricing"
+                className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+              >
+                查看定价 →
+              </Link>
+            </div>
+          )}
         </div>
       )}
 
@@ -215,12 +332,36 @@ export default function Home() {
         <div className="w-full max-w-lg bg-red-50 border border-red-200 rounded-2xl p-8 flex flex-col items-center gap-4">
           <span className="text-4xl">⚠️</span>
           <p className="text-red-700 font-medium text-center">{errorMsg}</p>
-          <button
-            onClick={handleReset}
-            className="px-6 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors"
-          >
-            重试
-          </button>
+          <div className="flex gap-3">
+            {errorMsg.includes("配额") && (
+              <>
+                {!session?.user && (
+                  <Link
+                    href="/auth/signin"
+                    className="px-6 py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 transition-colors"
+                  >
+                    登录领免费次数
+                  </Link>
+                )}
+                <Link
+                  href="/pricing"
+                  className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors"
+                >
+                  开通Pro
+                </Link>
+              </>
+            )}
+            <button
+              onClick={handleReset}
+              className={`px-6 py-3 rounded-xl font-medium transition-colors ${
+                errorMsg.includes("配额") 
+                  ? "bg-gray-200 text-gray-700 hover:bg-gray-300" 
+                  : "bg-red-600 text-white hover:bg-red-700"
+              }`}
+            >
+              重试
+            </button>
+          </div>
         </div>
       )}
 

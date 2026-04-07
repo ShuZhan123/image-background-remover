@@ -16,6 +16,7 @@ type PayPalSubscribeButtonProps = {
 };
 
 const clientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "";
+console.log("PayPal Client ID:", clientId);
 
 export default function PayPalSubscribeButton({ plan, onSuccess, onError }: PayPalSubscribeButtonProps) {
   const [loading, setLoading] = useState(false);
@@ -57,6 +58,14 @@ export default function PayPalSubscribeButton({ plan, onSuccess, onError }: PayP
     console.error("PayPal error:", error);
     onError(error.message || "PayPal error occurred");
     setLoading(false);
+  }
+
+  if (!clientId) {
+    return (
+      <div className="w-full p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-800 text-sm text-center">
+        PayPal Client ID not configured. Please check environment variables.
+      </div>
+    );
   }
 
   return (

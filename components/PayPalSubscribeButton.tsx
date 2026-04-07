@@ -15,7 +15,7 @@ type PayPalSubscribeButtonProps = {
   onError: (error: string) => void;
 };
 
-const clientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || process.env.PAYPAL_CLIENT_ID || "";
+const clientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "";
 
 export default function PayPalSubscribeButton({ plan, onSuccess, onError }: PayPalSubscribeButtonProps) {
   const [loading, setLoading] = useState(false);

@@ -10,14 +10,18 @@
   },
   "dependencies": {
     "@auth/d1-adapter": "^1.11.1",
+    "@paypal/checkout-server-sdk": "^1.0.3",
+    "@paypal/react-paypal-js": "^9.1.0",
     "next": "16.1.6",
     "next-auth": "^5.0.0-beta.30",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260405.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/paypal__checkout-server-sdk": "^1.0.8",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

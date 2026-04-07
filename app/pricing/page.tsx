@@ -2,9 +2,14 @@
 
 import { useSession } from "next-auth/react";
 import Link from "next/link";
+import PayPalSubscribeButton, { Plan } from "@/components/PayPalSubscribeButton";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 export default function PricingPage() {
   const { data: session } = useSession();
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
 
   const plans = [
     {
@@ -23,6 +28,7 @@ export default function PricingPage() {
       href: session ? "/dashboard" : "/auth/signin",
     },
     {
+      id: "pro-monthly" as const,
       name: "Pro 月付",
       price: "12",
       period: "/月",
@@ -40,9 +46,9 @@ export default function PricingPage() {
       cta: "立即开通",
       highlighted: true,
       badge: "🔥 最受欢迎",
-      href: "#checkout",
     },
     {
+      id: "pro-yearly" as const,
       name: "Pro 年付",
       price: "99",
       period: "/年",
@@ -60,9 +66,16 @@ export default function PricingPage() {
       cta: "开通年付",
       highlighted: false,
       badge: "💥 省 45 元",
-      href: "#checkout",
     },
   ];
+
+  function handleSubscriptionSuccess() {
+    router.push("/dashboard?subscription=success");
+  }
+
+  function handleSubscriptionError(errorMessage: string) {
+    setError(errorMessage);
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4">
@@ -76,6 +89,12 @@ export default function PricingPage() {
             先用后付，用多少付多少，没有隐藏消费
           </p>
         </div>
+
+        {error && (
+          <div className="mb-8 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-center">
+            {error}
+          </div>
+        )}
 
         {/* Pricing Cards */}
         <div className="grid md:grid-cols-3 gap-8">
@@ -102,7 +121,7 @@ export default function PricingPage() {
               <div className="mb-6">
                 <div className="flex items-baseline gap-1">
                   <span className="text-4xl font-bold text-gray-900">
-                    ¥{plan.price}
+                    ${plan.price}
                   </span>
                   <span className="text-gray-500">{plan.period}</span>
                 </div>
@@ -115,16 +134,34 @@ export default function PricingPage() {
                   </li>
                 ))}
               </ul>
-              <Link
-                href={plan.href}
-                className={`block text-center px-6 py-3 rounded-xl font-medium transition-colors ${
-                  plan.highlighted
-                    ? "bg-blue-600 text-white hover:bg-blue-700"
-                    : "bg-gray-100 text-gray-900 hover:bg-gray-200"
-                }`}
-              >
-                {plan.cta}
-              </Link>
+              {"href" in plan && (
+                <Link
+                  href={plan.href!}
+                  className={`block text-center px-6 py-3 rounded-xl font-medium transition-colors ${
+                    plan.highlighted
+                      ? "bg-blue-600 text-white hover:bg-blue-700"
+                      : "bg-gray-100 text-gray-900 hover:bg-gray-200"
+                  }`}
+                >
+                  {plan.cta}
+                </Link>
+              )}
+              {"id" in plan && (
+                session ? (
+                  <PayPalSubscribeButton
+                    plan={plan as Plan}
+                    onSuccess={handleSubscriptionSuccess}
+                    onError={handleSubscriptionError}
+                  />
+                ) : (
+                  <Link
+                    href="/auth/signin"
+                    className="block text-center px-6 py-3 rounded-xl font-medium bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    请先登录
+                  </Link>
+                )
+              )}
             </div>
           ))}
         </div>
@@ -164,7 +201,7 @@ export default function PricingPage() {
                 Q: 支持什么支付方式？
               </h3>
               <p className="text-gray-600">
-                A: 目前支持支付宝、微信支付，海外用户支持 PayPal。
+                A: 目前支持支付宝，海外用户支持 PayPal（USD）。
               </p>
             </div>
           </div>

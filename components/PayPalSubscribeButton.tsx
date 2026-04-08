@@ -132,6 +132,7 @@ export default function PayPalSubscribeButton({ plan, onSuccess, onError }: PayP
     clientId,
     currency: "USD",
     intent: "subscription",
+    vault: true, // PayPal v6 requires vault=true for subscriptions
     sdkBaseUrl: sdkUrl
   };
 

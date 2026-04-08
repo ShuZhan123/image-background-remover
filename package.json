@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "node scripts/replace-env.js && next build",
+    "dev": "node scripts/replace-env-dev.js && next dev",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },

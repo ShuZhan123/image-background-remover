@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
           billing_cycles: [
             {
               frequency: {
-                interval_unit: plan.interval,
+                interval_unit: plan.interval.toLowerCase() as "monthly" | "yearly",
                 interval_count: 1
               },
               tenure_type: "REGULAR",

@@ -3,6 +3,14 @@
 import { useState, useEffect } from "react";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 
+// 自定义 SDK URL，根据环境选择沙箱还是生产
+const getSdkUrl = (environment: string) => {
+  if (environment === "sandbox") {
+    return "https://www.sandbox.paypal.com/sdk/js";
+  }
+  return "https://www.paypal.com/sdk/js";
+};
+
 export type Plan = {
   id: "pro-monthly" | "pro-yearly";
   name: string;
@@ -118,18 +126,20 @@ export default function PayPalSubscribeButton({ plan, onSuccess, onError }: PayP
     );
   }
 
-  const sdkUrl = environment === "sandbox" 
-    ? "https://www.sandbox.paypal.com/sdk/js" 
-    : "https://www.paypal.com/sdk/js";
+  // 自定义 SDK URL 来确保使用正确环境
+  const sdkUrl = getSdkUrl(environment);
+  const options = {
+    clientId,
+    currency: "USD",
+    intent: "subscription",
+    sdkBaseUrl: sdkUrl
+  };
+
+  console.log("PayPal SDK URL:", sdkUrl);
 
   return (
     <div className="w-full">
-      <PayPalScriptProvider options={{ 
-        clientId, 
-        currency: "USD", 
-        intent: "subscription",
-        ...(environment === "sandbox" && { sandbox: true })
-      }}>
+      <PayPalScriptProvider options={options}>
         <PayPalButtons
           style={{
             layout: "vertical",

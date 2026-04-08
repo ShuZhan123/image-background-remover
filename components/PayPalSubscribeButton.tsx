@@ -15,16 +15,35 @@ type PayPalSubscribeButtonProps = {
   onError: (error: string) => void;
 };
 
-// 客户端动态获取环境变量，通过 window.__env 注入
-// 适配 Cloudflare Pages 构建时环境变量不注入问题
+// 客户端动态获取环境变量，兜底方案
+// 1. 优先从 window.__env 读取（Cloudflare Pages 替换）
+// 2. 如果还是占位符，从 API 端点动态获取
 function useClientId() {
   const [clientId, setClientId] = useState<string>("");
   
   useEffect(() => {
-    // 从 window.__env 读取
-    const id = (window as any).__env?.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
-    console.log("PayPal Client ID:", id);
-    setClientId(id || "");
+    async function getClientId() {
+      // 先从 window.__env 读取
+      let id = (window as any).__env?.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
+      
+      // 如果还是占位符字符串，说明 Cloudflare 替换没生效，从 API 获取
+      if (!id || id.includes("{{") || id.includes("}}")) {
+        console.log("Cloudflare replacement not working, fetching from API...");
+        try {
+          const res = await fetch("/api/env");
+          const data = await res.json();
+          id = data.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "";
+        } catch (e) {
+          console.error("Failed to fetch env from API:", e);
+          id = "";
+        }
+      }
+      
+      console.log("PayPal Client ID:", id);
+      setClientId(id || "");
+    }
+    
+    getClientId();
   }, []);
   
   return clientId;

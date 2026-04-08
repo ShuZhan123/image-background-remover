@@ -34,35 +34,32 @@ function useEnv() {
       let clientId = "";
       let environment = "sandbox";
       
-      // 先从 window.__env 读取
-      if ((window as any).__env) {
-        clientId = (window as any).__env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
-      }
-      
-      // 如果还是占位符字符串，说明 Cloudflare 替换没生效，从 API 获取
-      if (!clientId || clientId.includes("{{") || clientId.includes("}}")) {
-        console.log("Cloudflare replacement not working, fetching from API...");
-        try {
-          const res = await fetch("/api/env");
-          const data = await res.json();
-          clientId = data.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "";
-        } catch (e) {
-          console.error("Failed to fetch env from API:", e);
-          clientId = "";
+      // 先尝试从 API 获取，保证一定能拿到正确的值
+      console.log("Fetching env from API...");
+      try {
+        const res = await fetch("/api/env");
+        const data = await res.json();
+        clientId = data.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "";
+        if (data.PAYPAL_ENVIRONMENT) {
+          environment = data.PAYPAL_ENVIRONMENT;
+        }
+      } catch (e) {
+        console.error("Failed to fetch env from API:", e);
+        // fallback to window.__env if API fails
+        if ((window as any).__env) {
+          clientId = (window as any).__env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
+          if ((window as any).__env.PAYPAL_ENVIRONMENT) {
+            environment = (window as any).__env.PAYPAL_ENVIRONMENT;
+          }
         }
       }
       
-      // 读取 PayPal 环境
-      if ((window as any).__env?.PAYPAL_ENVIRONMENT) {
-        environment = (window as any).__env.PAYPAL_ENVIRONMENT;
-      } else {
-        try {
-          const res = await fetch("/api/env");
-          const data = await res.json();
-          if (data.PAYPAL_ENVIRONMENT) {
-            environment = data.PAYPAL_ENVIRONMENT;
-          }
-        } catch (e) {}
+      // 如果还是占位符，清理一下
+      if (clientId.includes("{{") || clientId.includes("}}")) {
+        clientId = "";
+      }
+      if (environment.includes("{{") || environment.includes("}}")) {
+        environment = "sandbox";
       }
       
       console.log("PayPal env:", { clientId, environment });

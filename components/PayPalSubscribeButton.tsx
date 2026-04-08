@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 
 export type Plan = {
@@ -15,11 +15,21 @@ type PayPalSubscribeButtonProps = {
   onError: (error: string) => void;
 };
 
-const clientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "";
-console.log("PayPal Client ID:", clientId);
+// 客户端动态获取环境变量，适配 Cloudflare Pages
+function useClientId() {
+  const [clientId, setClientId] = useState<string>("");
+  
+  useEffect(() => {
+    // 浏览器环境下获取 NEXT_PUBLIC_ 变量
+    setClientId(process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "");
+  }, []);
+  
+  return clientId;
+}
 
 export default function PayPalSubscribeButton({ plan, onSuccess, onError }: PayPalSubscribeButtonProps) {
   const [loading, setLoading] = useState(false);
+  const clientId = useClientId();
 
   async function createSubscription() {
     setLoading(true);

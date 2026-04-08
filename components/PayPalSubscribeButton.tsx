@@ -93,7 +93,9 @@ export default function PayPalSubscribeButton({ plan, onSuccess, onError }: PayP
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to create subscription");
+        const errorMsg = data.error || "Failed to create subscription";
+        console.error("Create subscription failed:", errorMsg);
+        throw new Error(errorMsg);
       }
 
       // Return the subscription ID for PayPal

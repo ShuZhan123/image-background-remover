@@ -157,7 +157,7 @@ export async function POST(req: NextRequest) {
         if (!billingRes.ok) {
           const error = await billingRes.text();
           console.error("Failed to create billing plan:", error);
-          return NextResponse.json({ error: "Failed to create billing plan" }, { status: 500 });
+          return NextResponse.json({ error: `Failed to create billing plan: ${error}` }, { status: 500 });
         }
 
         const billingPlan = await billingRes.json();

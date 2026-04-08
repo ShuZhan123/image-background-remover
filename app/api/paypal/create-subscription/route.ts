@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PAYPAL_PLAN_IDS, PAYPAL_PLANS, PayPalPlanId } from "@/lib/paypal";
+import { PAYPAL_PLANS, PayPalPlanId } from "@/lib/paypal";
 import { auth } from "@/auth";
 
 export const runtime = "edge";
@@ -19,15 +19,9 @@ export async function POST(req: NextRequest) {
 
     const { planId } = await req.json() as { planId: PayPalPlanId };
     const plan = PAYPAL_PLANS[planId];
-    const precreatedPlanId = PAYPAL_PLAN_IDS[planId];
     
     if (!plan) {
       return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
-    }
-
-    if (!precreatedPlanId) {
-      console.error(`Plan ID not configured for ${planId}`);
-      return NextResponse.json({ error: "Plan not configured" }, { status: 500 });
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
@@ -39,7 +33,187 @@ export async function POST(req: NextRequest) {
       `${process.env.PAYPAL_CLIENT_ID}:${process.env.PAYPAL_CLIENT_SECRET}`
     ).toString('base64');
 
-    // Create subscription directly using pre-created plan ID
+    // 先尝试查找已存在的同名 Product，如果找不到再创建
+    let productId: string;
+    const listProductsRes = await fetch(`${apiBaseUrl}/v1/catalogs/products?page_size=10`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Basic ${authString}`,
+      },
+    });
+
+    if (listProductsRes.ok) {
+      const products = await listProductsRes.json();
+      const existingProduct = products.products?.find((p: any) => p.name === "Image Background Remover Pro");
+      if (existingProduct) {
+        productId = existingProduct.id;
+        console.log("Using existing product:", productId);
+      } else {
+        // Create product
+        const productRes = await fetch(`${apiBaseUrl}/v1/catalogs/products`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Basic ${authString}`,
+          },
+          body: JSON.stringify({
+            name: "Image Background Remover Pro",
+            description: "Pro subscription for Image Background Remover",
+            type: "SERVICE",
+            category: "SOFTWARE"
+          })
+        });
+
+        if (!productRes.ok) {
+          const error = await productRes.text();
+          console.error("Failed to create product:", error);
+          return NextResponse.json({ error: "Failed to create product" }, { status: 500 });
+        }
+
+        const product = await productRes.json();
+        productId = product.id;
+        console.log("Created new product:", productId);
+      }
+    } else {
+      // Create product if list fails
+      const productRes = await fetch(`${apiBaseUrl}/v1/catalogs/products`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Basic ${authString}`,
+        },
+        body: JSON.stringify({
+          name: "Image Background Remover Pro",
+          description: "Pro subscription for Image Background Remover",
+          type: "SERVICE",
+          category: "SOFTWARE"
+        })
+      });
+
+      if (!productRes.ok) {
+        const error = await productRes.text();
+        console.error("Failed to create product:", error);
+        return NextResponse.json({ error: "Failed to create product" }, { status: 500 });
+      }
+
+      const product = await productRes.json();
+      productId = product.id;
+      console.log("Created new product:", productId);
+    }
+
+    // 查找已存在的同名 Plan
+    let billingPlanId: string;
+    const listPlansRes = await fetch(`${apiBaseUrl}/v1/billing/plans?page_size=10`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Basic ${authString}`,
+      },
+    });
+
+    if (listPlansRes.ok) {
+      const plans = await listPlansRes.json();
+      const existingPlan = plans.plans?.find((p: any) => p.name === plan.name);
+      if (existingPlan && existingPlan.status === "ACTIVE") {
+        billingPlanId = existingPlan.id;
+        console.log("Using existing billing plan:", billingPlanId);
+      } else {
+        // Create billing plan
+        const billingRes = await fetch(`${apiBaseUrl}/v1/billing/plans`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Basic ${authString}`,
+          },
+          body: JSON.stringify({
+            product_id: productId,
+            name: plan.name,
+            description: `${plan.quota} processing credits per ${plan.interval.toLowerCase()}`,
+            status: "ACTIVE",
+            billing_cycles: [
+              {
+                frequency: {
+                  interval_unit: plan.interval,
+                  interval_count: 1
+                },
+                tenure_type: "REGULAR",
+                sequence: 1,
+                total_cycles: 0,
+                pricing_scheme: {
+                  fixed_price: {
+                    value: plan.price,
+                    currency_code: plan.currency
+                  }
+                }
+              }
+            ],
+            payment_preferences: {
+              auto_bill_outstanding: true,
+              setup_fee_failure_action: "CONTINUE",
+              payment_failure_threshold: 3
+            }
+          })
+        });
+
+        if (!billingRes.ok) {
+          const error = await billingRes.text();
+          console.error("Failed to create billing plan:", error);
+          return NextResponse.json({ error: "Failed to create billing plan" }, { status: 500 });
+        }
+
+        const billingPlan = await billingRes.json();
+        billingPlanId = billingPlan.id;
+        console.log("Created new billing plan:", billingPlanId);
+      }
+    } else {
+      // Create plan if list fails
+      const billingRes = await fetch(`${apiBaseUrl}/v1/billing/plans`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Basic ${authString}`,
+        },
+        body: JSON.stringify({
+          product_id: productId,
+          name: plan.name,
+          description: `${plan.quota} processing credits per ${plan.interval.toLowerCase()}`,
+          status: "ACTIVE",
+          billing_cycles: [
+            {
+              frequency: {
+                interval_unit: plan.interval,
+                interval_count: 1
+              },
+              tenure_type: "REGULAR",
+              sequence: 1,
+              total_cycles: 0,
+              pricing_scheme: {
+                fixed_price: {
+                  value: plan.price,
+                  currency_code: plan.currency
+                }
+              }
+            }
+          ],
+          payment_preferences: {
+            auto_bill_outstanding: true,
+            setup_fee_failure_action: "CONTINUE",
+            payment_failure_threshold: 3
+          }
+        })
+      });
+
+      if (!billingRes.ok) {
+        const error = await billingRes.text();
+        console.error("Failed to create billing plan:", error);
+        return NextResponse.json({ error: "Failed to create billing plan" }, { status: 500 });
+      }
+
+      const billingPlan = await billingRes.json();
+      billingPlanId = billingPlan.id;
+      console.log("Created new billing plan:", billingPlanId);
+    }
+
+    // Create subscription
     const subscriptionRes = await fetch(`${apiBaseUrl}/v1/billing/subscriptions`, {
       method: "POST",
       headers: {
@@ -47,7 +221,7 @@ export async function POST(req: NextRequest) {
         "Authorization": `Basic ${authString}`,
       },
       body: JSON.stringify({
-        plan_id: precreatedPlanId,
+        plan_id: billingPlanId,
         subscriber: {
           email_address: session.user.email
         },

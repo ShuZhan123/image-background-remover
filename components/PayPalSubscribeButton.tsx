@@ -18,40 +18,58 @@ type PayPalSubscribeButtonProps = {
 // 客户端动态获取环境变量，兜底方案
 // 1. 优先从 window.__env 读取（Cloudflare Pages 替换）
 // 2. 如果还是占位符，从 API 端点动态获取
-function useClientId() {
-  const [clientId, setClientId] = useState<string>("");
+function useEnv() {
+  const [env, setEnv] = useState<{clientId: string, environment: string}>({ clientId: "", environment: "sandbox" });
   
   useEffect(() => {
-    async function getClientId() {
+    async function getEnv() {
+      let clientId = "";
+      let environment = "sandbox";
+      
       // 先从 window.__env 读取
-      let id = (window as any).__env?.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
+      if ((window as any).__env) {
+        clientId = (window as any).__env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
+      }
       
       // 如果还是占位符字符串，说明 Cloudflare 替换没生效，从 API 获取
-      if (!id || id.includes("{{") || id.includes("}}")) {
+      if (!clientId || clientId.includes("{{") || clientId.includes("}}")) {
         console.log("Cloudflare replacement not working, fetching from API...");
         try {
           const res = await fetch("/api/env");
           const data = await res.json();
-          id = data.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "";
+          clientId = data.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "";
         } catch (e) {
           console.error("Failed to fetch env from API:", e);
-          id = "";
+          clientId = "";
         }
       }
       
-      console.log("PayPal Client ID:", id);
-      setClientId(id || "");
+      // 读取 PayPal 环境
+      if ((window as any).__env?.PAYPAL_ENVIRONMENT) {
+        environment = (window as any).__env.PAYPAL_ENVIRONMENT;
+      } else {
+        try {
+          const res = await fetch("/api/env");
+          const data = await res.json();
+          if (data.PAYPAL_ENVIRONMENT) {
+            environment = data.PAYPAL_ENVIRONMENT;
+          }
+        } catch (e) {}
+      }
+      
+      console.log("PayPal env:", { clientId, environment });
+      setEnv({ clientId, environment });
     }
     
-    getClientId();
+    getEnv();
   }, []);
   
-  return clientId;
+  return env;
 }
 
 export default function PayPalSubscribeButton({ plan, onSuccess, onError }: PayPalSubscribeButtonProps) {
   const [loading, setLoading] = useState(false);
-  const clientId = useClientId();
+  const { clientId, environment } = useEnv();
 
   async function createSubscription() {
     setLoading(true);
@@ -100,9 +118,18 @@ export default function PayPalSubscribeButton({ plan, onSuccess, onError }: PayP
     );
   }
 
+  const sdkUrl = environment === "sandbox" 
+    ? "https://www.sandbox.paypal.com/sdk/js" 
+    : "https://www.paypal.com/sdk/js";
+
   return (
     <div className="w-full">
-      <PayPalScriptProvider options={{ clientId, currency: "USD", intent: "subscription" }}>
+      <PayPalScriptProvider options={{ 
+        clientId, 
+        currency: "USD", 
+        intent: "subscription",
+        ...(environment === "sandbox" && { sandbox: true })
+      }}>
         <PayPalButtons
           style={{
             layout: "vertical",

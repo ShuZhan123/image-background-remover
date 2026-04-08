@@ -7,12 +7,14 @@ export const PAYPAL_PLAN_IDS = {
 
 export type PayPalPlanId = keyof typeof PAYPAL_PLAN_IDS;
 
+// PayPal API uses interval_unit: "DAY", "WEEK", "MONTH", "YEAR"
 export const PAYPAL_PLANS = {
   "pro-monthly": {
     name: "Pro Monthly",
     price: "12.00",
     currency: "USD",
     interval: "MONTHLY",
+    paypalInterval: "MONTH" as const,
     quota: 200,
   },
   "pro-yearly": {
@@ -20,6 +22,7 @@ export const PAYPAL_PLANS = {
     price: "99.00", 
     currency: "USD",
     interval: "YEARLY",
+    paypalInterval: "YEAR" as const,
     quota: 2400,
   }
 } as const;

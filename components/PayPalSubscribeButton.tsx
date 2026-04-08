@@ -15,13 +15,16 @@ type PayPalSubscribeButtonProps = {
   onError: (error: string) => void;
 };
 
-// 客户端动态获取环境变量，适配 Cloudflare Pages
+// 客户端动态获取环境变量，通过 window.__env 注入
+// 适配 Cloudflare Pages 构建时环境变量不注入问题
 function useClientId() {
   const [clientId, setClientId] = useState<string>("");
   
   useEffect(() => {
-    // 浏览器环境下获取 NEXT_PUBLIC_ 变量
-    setClientId(process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "");
+    // 从 window.__env 读取
+    const id = (window as any).__env?.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
+    console.log("PayPal Client ID:", id);
+    setClientId(id || "");
   }, []);
   
   return clientId;

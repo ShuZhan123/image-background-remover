@@ -15,6 +15,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh">
+      <head>
+        <script src="/env.js" />
+      </head>
       <body className="min-h-screen bg-gray-50">
         <SessionProvider>
           <nav className="bg-white border-b border-gray-200">

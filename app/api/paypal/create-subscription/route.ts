@@ -231,7 +231,7 @@ export async function POST(req: NextRequest) {
           brand_name: "Image Background Remover",
           landing_page: "LOGIN",
           shipping_preference: "NO_SHIPPING",
-          user_action: "SUBSCRIBE"
+          user_action: "continue"
         },
         custom_id: JSON.stringify({
           userId: (session.user as any).id,

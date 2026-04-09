@@ -215,9 +215,6 @@ async function handleSubscriptionActivated(event: any) {
     `).bind(quota, userId).run();
 
     console.log(`Updated user ${userId} to ${planType} subscription, expires ${expiresAt.toISOString()}`);
-  } catch (parseError) {
-    console.error("Error parsing custom_id:", parseError);
-  }
 }
 
 async function handleSubscriptionCanceled(event: any) {

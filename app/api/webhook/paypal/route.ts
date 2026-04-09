@@ -129,14 +129,14 @@ async function handleSubscriptionActivated(event: any) {
     return;
   }
   
-  let userId: number | null = null;
+  let userId: any = null;
   let planType: string | null = null;
   
   // 1. 尝试从 customId 解析
   if (customId) {
     try {
       const parsed = JSON.parse(customId);
-      userId = Number(parsed.userId);
+      userId = parsed.userId; // userId 可能是字符串 UUID，不要转 Number
       planType = parsed.planType;
       console.log(`Parsed custom_id: userId=${userId}, planType=${planType}`);
     } catch (parseError) {
@@ -153,7 +153,7 @@ async function handleSubscriptionActivated(event: any) {
         .bind(subscriberEmail)
         .first();
       if (user) {
-        userId = Number(user.id);
+        userId = user.id; // 保持原样，不用转 Number
         // 默认按月订阅（如果是测试就是 pro-monthly）
         planType = "pro-monthly";
         console.log(`Found user by email: userId=${userId}, using default planType=${planType}`);

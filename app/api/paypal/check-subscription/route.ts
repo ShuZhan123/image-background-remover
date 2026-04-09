@@ -68,7 +68,8 @@ export async function GET(req: NextRequest) {
         if (customId) {
           try {
             const { userId: customUserId, planType } = JSON.parse(customId);
-            if (Number(customUserId) === userId) {
+            // userId 可能是字符串 UUID，直接比较
+            if (String(customUserId) === String(userId)) {
               resolvedPlanType = planType;
             }
           } catch (e) {

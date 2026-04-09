@@ -70,14 +70,21 @@ export async function POST(req: NextRequest) {
     }
 
     // Handle different event types
+    console.log(`Processing webhook event: ${event.event_type}`);
+    console.log(`Full event resource:`, JSON.stringify(event.resource, null, 2));
+    
     switch (event.event_type) {
       case "BILLING.SUBSCRIPTION.CREATED":
       case "BILLING.SUBSCRIPTION.ACTIVATED":
+      case "BILLING.SUBSCRIPTION.APPROVED":
       case "PAYMENT.SALE.COMPLETED":
+      case "SUBSCRIPTION.CREATED":
+      case "SUBSCRIPTION.ACTIVATED":
         await handleSubscriptionActivated(event);
         break;
       case "BILLING.SUBSCRIPTION.CANCELLED":
       case "BILLING.SUBSCRIPTION.EXPIRED":
+      case "BILLING.SUBSCRIPTION.SUSPENDED":
         await handleSubscriptionCanceled(event);
         break;
       default:
@@ -92,8 +99,20 @@ export async function POST(req: NextRequest) {
 }
 
 async function handleSubscriptionActivated(event: any) {
-  const subscription = event.resource;
-  const customId = subscription.custom_id;
+  let subscription = event.resource;
+  let customId = subscription.custom_id;
+  
+  // PAYMENT.SALE.COMPLETED 事件结构不同，custom_id 在 custom 字段
+  if (!customId && event.event_type === "PAYMENT.SALE.COMPLETED") {
+    customId = subscription.custom;
+  }
+  
+  // 如果还是找不到 custom_id，尝试从 billing_agreement 获取
+  if (!customId && subscription.billing_agreement) {
+    customId = subscription.billing_agreement.custom_id;
+  }
+  
+  console.log(`handleSubscriptionActivated: event_type=${event.event_type}, customId=${customId}`);
   
   if (!customId) {
     console.warn("No custom_id found in subscription");
@@ -101,13 +120,42 @@ async function handleSubscriptionActivated(event: any) {
   }
 
   try {
-    const { userId, planType } = JSON.parse(customId);
-    
-    // Get D1 database from environment (Cloudflare Pages 绑定在 globalThis.env)
     const db = (globalThis as any).env?.DB || (process.env as any).DB;
     if (!db) {
       console.error("DB binding not found");
       return;
+    }
+    
+    let userId: number | null = null;
+    let planType: string | null = null;
+    
+    try {
+      const parsed = JSON.parse(customId);
+      userId = Number(parsed.userId);
+      planType = parsed.planType;
+      console.log(`Parsed custom_id: userId=${userId}, planType=${planType}`);
+    } catch (parseError) {
+      console.error("Error parsing custom_id:", parseError);
+      
+      // 如果解析失败，尝试通过 subscriber.email 查找用户
+      const subscriberEmail = subscription.subscriber?.email_address;
+      if (subscriberEmail) {
+        console.log(`Trying to find user by email: ${subscriberEmail}`);
+        const user = await db.prepare(`SELECT id FROM users WHERE email = ?`)
+          .bind(subscriberEmail)
+          .first();
+        if (user) {
+          userId = Number(user.id);
+          // 默认按月订阅
+          planType = "pro-monthly";
+          console.log(`Found user by email: userId=${userId}`);
+        }
+      }
+      
+      if (!userId || !planType) {
+        console.error("Could not resolve userId and planType from webhook");
+        return;
+      }
     }
 
     // Calculate expiration date

@@ -58,13 +58,23 @@ export async function POST(req: NextRequest) {
         
         if (result.verification_status !== "SUCCESS") {
           console.error("Webhook verification failed");
-          return NextResponse.json({ error: "Verification failed" }, { status: 400 });
+          // In sandbox, we can continue even if verification fails
+          const isSandbox = process.env.PAYPAL_ENVIRONMENT !== "live";
+          if (isSandbox) {
+            console.warn("Continuing processing despite verification failure (sandbox mode)");
+          } else {
+            return NextResponse.json({ error: "Verification failed" }, { status: 400 });
+          }
         }
       } catch (verifyError) {
         console.error("Error verifying webhook:", verifyError);
         // In sandbox, we can continue even if verification fails
-        // 总是继续处理，即使验证失败 - sandbox 模拟事件经常验证失败
-        console.warn("Continuing processing despite verification failure (sandbox mode)");
+        const isSandbox = process.env.PAYPAL_ENVIRONMENT !== "live";
+        if (isSandbox) {
+          console.warn("Continuing processing despite verification failure (sandbox mode)");
+        } else {
+          return NextResponse.json({ error: "Verification failed" }, { status: 400 });
+        }
       }
     }
 
@@ -112,22 +122,18 @@ async function handleSubscriptionActivated(event: any) {
   }
   
   console.log(`handleSubscriptionActivated: event_type=${event.event_type}, customId=${customId}`);
-  
-  if (!customId) {
-    console.warn("No custom_id found in subscription");
+
+  const db = (globalThis as any).env?.DB || (process.env as any).DB;
+  if (!db) {
+    console.error("DB binding not found");
     return;
   }
-
-  try {
-    const db = (globalThis as any).env?.DB || (process.env as any).DB;
-    if (!db) {
-      console.error("DB binding not found");
-      return;
-    }
-    
-    let userId: number | null = null;
-    let planType: string | null = null;
-    
+  
+  let userId: number | null = null;
+  let planType: string | null = null;
+  
+  // 1. 尝试从 customId 解析
+  if (customId) {
     try {
       const parsed = JSON.parse(customId);
       userId = Number(parsed.userId);
@@ -135,27 +141,34 @@ async function handleSubscriptionActivated(event: any) {
       console.log(`Parsed custom_id: userId=${userId}, planType=${planType}`);
     } catch (parseError) {
       console.error("Error parsing custom_id:", parseError);
-      
-      // 如果解析失败，尝试通过 subscriber.email 查找用户
-      const subscriberEmail = subscription.subscriber?.email_address;
-      if (subscriberEmail) {
-        console.log(`Trying to find user by email: ${subscriberEmail}`);
-        const user = await db.prepare(`SELECT id FROM users WHERE email = ?`)
-          .bind(subscriberEmail)
-          .first();
-        if (user) {
-          userId = Number(user.id);
-          // 默认按月订阅
-          planType = "pro-monthly";
-          console.log(`Found user by email: userId=${userId}`);
-        }
-      }
-      
-      if (!userId || !planType) {
-        console.error("Could not resolve userId and planType from webhook");
-        return;
-      }
     }
+  }
+  
+  // 2. 如果解析失败或没有 customId，尝试通过 subscriber.email 查找用户
+  if (!userId || !planType) {
+    const subscriberEmail = subscription.subscriber?.email_address;
+    if (subscriberEmail) {
+      console.log(`Trying to find user by email: ${subscriberEmail}`);
+      const user = await db.prepare(`SELECT id FROM users WHERE email = ?`)
+        .bind(subscriberEmail)
+        .first();
+      if (user) {
+        userId = Number(user.id);
+        // 默认按月订阅（如果是测试就是 pro-monthly）
+        planType = "pro-monthly";
+        console.log(`Found user by email: userId=${userId}, using default planType=${planType}`);
+      } else {
+        console.log(`No user found with email: ${subscriberEmail}`);
+      }
+    } else {
+      console.log("No subscriber email found in webhook");
+    }
+  }
+  
+  if (!userId || !planType) {
+    console.error("Could not resolve userId and planType from webhook. Giving up.");
+    return;
+  }
 
     // Calculate expiration date
     const startsAt = new Date();

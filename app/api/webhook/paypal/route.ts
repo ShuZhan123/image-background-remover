@@ -179,6 +179,9 @@ async function handleSubscriptionActivated(event: any) {
       expiresAt.setFullYear(expiresAt.getFullYear() + 1);
     }
 
+    // Get subscriber_id or use subscription.id if not exists
+    const customerId = subscription.subscriber_id || subscription.id;
+    
     // Update user plan
     await db.prepare(`
       UPDATE users 
@@ -187,11 +190,14 @@ async function handleSubscriptionActivated(event: any) {
           customer_id = ?, 
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).bind(expiresAt.toISOString(), subscription.subscriber_id, userId).run();
+    `).bind(expiresAt.toISOString(), customerId, userId).run();
 
     // Get plan quota
     const quota = planType === "pro-monthly" ? 200 : 2400;
 
+    // Create subscription record
+    const subscriptionStatus = subscription.status || "active";
+    
     // Create subscription record
     await db.prepare(`
       INSERT INTO subscriptions (
@@ -204,7 +210,7 @@ async function handleSubscriptionActivated(event: any) {
       planType === "pro-monthly" ? 12.00 : 99.00,
       "USD",
       subscription.id,
-      "active",
+      subscriptionStatus.toLowerCase(),
       startsAt.toISOString(),
       expiresAt.toISOString()
     ).run();

@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userId = Number(session.user.id);
+    const userId = session.user.id; // userId is string UUID, don't convert to Number
     const userEmail = session.user.email;
     if (!userEmail) {
       return NextResponse.json({ error: "User email not found" }, { status: 400 });
@@ -92,6 +92,9 @@ export async function GET(req: NextRequest) {
           expiresAt.setFullYear(expiresAt.getFullYear() + 1);
         }
 
+        // Get subscriber_id or use subscription.id if not exists
+        const customerId = sub.subscriber_id || sub.id;
+        
         // 更新用户套餐
         await db.prepare(`
           UPDATE users 
@@ -100,7 +103,7 @@ export async function GET(req: NextRequest) {
               customer_id = ?, 
               updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
-        `).bind(expiresAt.toISOString(), sub.subscriber_id, userId).run();
+        `).bind(expiresAt.toISOString(), customerId, userId).run();
 
         // 获取配额
         const quota = resolvedPlanType === "pro-monthly" ? 200 : 2400;

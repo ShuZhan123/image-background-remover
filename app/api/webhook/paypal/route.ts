@@ -103,8 +103,8 @@ async function handleSubscriptionActivated(event: any) {
   try {
     const { userId, planType } = JSON.parse(customId);
     
-    // Get D1 database from environment
-    const db = (process.env as any).DB as D1Database;
+    // Get D1 database from environment (Cloudflare Pages 绑定在 globalThis.env)
+    const db = (globalThis as any).env?.DB || (process.env as any).DB;
     if (!db) {
       console.error("DB binding not found");
       return;
@@ -171,7 +171,8 @@ async function handleSubscriptionCanceled(event: any) {
 
   try {
     const { userId } = JSON.parse(customId);
-    const db = (process.env as any).DB as D1Database;
+    // Get D1 database from environment (Cloudflare Pages 绑定在 globalThis.env)
+    const db = (globalThis as any).env?.DB || (process.env as any).DB;
     if (!db) {
       console.error("DB binding not found");
       return;

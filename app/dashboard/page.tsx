@@ -34,16 +34,41 @@ export default function DashboardPage() {
     }
 
     if (sessionStatus === "authenticated") {
-      fetch("/api/user/quota")
-        .then(res => res.json())
-        .then(data => {
-          setQuota(data);
-          setLoading(false);
-        })
-        .catch(err => {
-          console.error("Failed to fetch quota:", err);
-          setLoading(false);
-        });
+      // 检查 URL 中是否有 subscription=success 参数，如果有则主动检查订阅状态
+      const hasSubscriptionSuccess = typeof window !== 'undefined' && 
+        new URLSearchParams(window.location.search).has('subscription');
+      
+      const loadQuota = () => {
+        fetch("/api/user/quota")
+          .then(res => res.json())
+          .then(data => {
+            setQuota(data);
+            setLoading(false);
+          })
+          .catch(err => {
+            console.error("Failed to fetch quota:", err);
+            setLoading(false);
+          });
+      };
+
+      if (hasSubscriptionSuccess) {
+        // 如果刚从PayPal返回，主动调用检查并激活订阅
+        fetch("/api/paypal/check-subscription")
+          .then(res => res.json())
+          .then(() => {
+            loadQuota();
+            // 清除URL参数，避免刷新重复触发
+            if (window.history.replaceState) {
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }
+          })
+          .catch(err => {
+            console.error("Failed to check subscription:", err);
+            loadQuota();
+          });
+      } else {
+        loadQuota();
+      }
 
       fetch("/api/user/history")
         .then(res => res.json())

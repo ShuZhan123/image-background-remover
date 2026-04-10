@@ -5,10 +5,6 @@ export const runtime = "edge";
 export async function GET() {
   const session = await auth();
   
-  if (!session?.user?.email) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   try {
     // @ts-ignore - D1 binding available on Cloudflare Pages
     const db = (globalThis as any).env?.DB;
@@ -23,13 +19,18 @@ export async function GET() {
       });
     }
 
-    console.log(`[quota] Getting quota for email: ${session.user.email}`);
+    let result = null;
     
-    // Get user by email, since session.user.id is UUID but database id is INTEGER auto-increment
-    let result = await db
-      .prepare("SELECT quota_free_used, quota_free_total, plan_type, plan_expires_at FROM users WHERE email = ?")
-      .bind(session.user.email)
-      .first();
+    if (session?.user?.email) {
+      console.log(`[quota] Getting quota for email: ${session.user.email}`);
+      // Get user by email, since session.user.id is UUID but database id is INTEGER auto-increment
+      result = await db
+        .prepare("SELECT quota_free_used, quota_free_total, plan_type, plan_expires_at FROM users WHERE email = ?")
+        .bind(session.user.email)
+        .first();
+    } else {
+      console.log(`[quota] No email in session, falling back to first user`);
+    }
 
     // If not found by email (shouldn't happen, but fallback to first user since there's only one user now)
     if (!result) {

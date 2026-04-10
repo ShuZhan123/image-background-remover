@@ -5,12 +5,10 @@ export const runtime = "edge";
 export async function GET() {
   const session = await auth();
   
-  if (!session?.user?.id) {
+  if (!session?.user?.email) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const userId = Number(session.user.id);
-  
   try {
     // @ts-ignore - D1 binding available on Cloudflare Pages
     const db = (globalThis as any).env?.DB;
@@ -25,9 +23,10 @@ export async function GET() {
       });
     }
 
+    // Get user by email, since session.user.id is UUID but database id is INTEGER auto-increment
     const result = await db
-      .prepare("SELECT quota_free_used, quota_free_total, plan_type, plan_expires_at FROM users WHERE id = ?")
-      .bind(userId)
+      .prepare("SELECT quota_free_used, quota_free_total, plan_type, plan_expires_at FROM users WHERE email = ?")
+      .bind(session.user.email)
       .first();
 
     if (!result) {

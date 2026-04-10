@@ -1,7 +1,9 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import { D1Adapter } from "@auth/d1-adapter";
 import type { JWT } from "next-auth/jwt";
 import type { Session, User } from "next-auth";
+import { D1Database } from "@cloudflare/workers-types";
 
 declare module "next-auth" {
   interface Session {
@@ -14,8 +16,8 @@ declare module "next-auth" {
   }
 }
 
-// 临时先去掉 D1 adapter 让登录跑通，确认OAuth配置没问题后再加回去
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  adapter: D1Adapter((globalThis as any).env?.DB || (process.env as any).DB),
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,

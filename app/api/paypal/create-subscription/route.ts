@@ -32,13 +32,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "DB not found" }, { status: 500 });
     }
     
-    const user = await db.prepare(`SELECT id FROM users WHERE email = ?`)
+    let user = await db.prepare(`SELECT id FROM users WHERE email = ?`)
       .bind(session.user.email)
       .first();
     
+    // If user doesn't exist in database yet, create it automatically
     if (!user) {
-      console.error(`User not found for email: ${session.user.email}`);
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      console.log(`Creating new user for email: ${session.user.email}`);
+      const result = await db.prepare(`
+        INSERT INTO users (email, name, google_id, picture) 
+        VALUES (?, ?, ?, ?)
+      `).bind(
+        session.user.email,
+        session.user.name || null,
+        (session.user as any).id || null, // session.user.id is the Google UUID
+        session.user.image || null
+      ).run();
+      
+      // Get the auto-incremented id
+      user = await db.prepare(`SELECT id FROM users WHERE email = ?`)
+        .bind(session.user.email)
+        .first();
+      
+      if (!user) {
+        console.error(`Failed to create user for email: ${session.user.email}`);
+        return NextResponse.json({ error: "Failed to create user" }, { status: 500 });
+      }
     }
     
     const userId = user.id; // This is the actual INTEGER userId from database

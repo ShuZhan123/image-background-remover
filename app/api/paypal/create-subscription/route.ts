@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PAYPAL_PLANS, PayPalPlanId } from "@/lib/paypal";
 import { auth } from "@/auth";
+import { D1Database } from "@cloudflare/workers-types";
 
 export const runtime = "edge";
 
@@ -23,6 +24,24 @@ export async function POST(req: NextRequest) {
     if (!plan) {
       return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
     }
+
+    // Get the actual INTEGER userId from database by email
+    const db = (globalThis as any).env?.DB || (process.env as any).DB;
+    if (!db) {
+      console.error("DB binding not found");
+      return NextResponse.json({ error: "DB not found" }, { status: 500 });
+    }
+    
+    const user = await db.prepare(`SELECT id FROM users WHERE email = ?`)
+      .bind(session.user.email)
+      .first();
+    
+    if (!user) {
+      console.error(`User not found for email: ${session.user.email}`);
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+    
+    const userId = user.id; // This is the actual INTEGER userId from database
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
@@ -234,7 +253,7 @@ export async function POST(req: NextRequest) {
           user_action: "continue"
         },
         custom_id: JSON.stringify({
-          userId: (session.user as any).id,
+          userId: userId,
           planType: planId
         })
       })

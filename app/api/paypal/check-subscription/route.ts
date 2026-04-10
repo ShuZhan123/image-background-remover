@@ -11,15 +11,32 @@ export async function GET(req: NextRequest) {
   try {
     const session = await auth();
     
-    if (!session?.user?.id) {
+    if (!session?.user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userId = session.user.id; // userId is string UUID, don't convert to Number
     const userEmail = session.user.email;
     if (!userEmail) {
       return NextResponse.json({ error: "User email not found" }, { status: 400 });
     }
+
+    // Get the actual INTEGER userId from database by email
+    const db = (globalThis as any).env?.DB || (process.env as any).DB;
+    if (!db) {
+      console.error("DB binding not found");
+      return NextResponse.json({ error: "DB not found" }, { status: 500 });
+    }
+    
+    const user = await db.prepare(`SELECT id FROM users WHERE email = ?`)
+      .bind(userEmail)
+      .first();
+    
+    if (!user) {
+      console.error(`[check-subscription] User not found for email: ${userEmail}`);
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+    
+    const userId = user.id; // This is the actual INTEGER userId from database
 
     const isSandbox = process.env.PAYPAL_ENVIRONMENT !== "live";
     const apiBaseUrl = isSandbox ? "https://api.sandbox.paypal.com" : "https://api.paypal.com";

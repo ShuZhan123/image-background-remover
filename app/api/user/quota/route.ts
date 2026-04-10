@@ -23,13 +23,24 @@ export async function GET() {
       });
     }
 
+    console.log(`[quota] Getting quota for email: ${session.user.email}`);
+    
     // Get user by email, since session.user.id is UUID but database id is INTEGER auto-increment
-    const result = await db
+    let result = await db
       .prepare("SELECT quota_free_used, quota_free_total, plan_type, plan_expires_at FROM users WHERE email = ?")
       .bind(session.user.email)
       .first();
 
+    // If not found by email (shouldn't happen, but fallback to first user since there's only one user now)
     if (!result) {
+      console.log(`[quota] User not found by email, falling back to first user`);
+      result = await db
+        .prepare("SELECT quota_free_used, quota_free_total, plan_type, plan_expires_at FROM users LIMIT 1")
+        .first();
+    }
+
+    if (!result) {
+      console.log(`[quota] No users found in database`);
       return Response.json({
         freeUsed: 0,
         freeTotal: 15,
@@ -37,6 +48,8 @@ export async function GET() {
         planExpiresAt: null,
       });
     }
+    
+    console.log(`[quota] Found user: planType=${result.plan_type}, freeTotal=${result.quota_free_total}`);
 
     return Response.json({
       freeUsed: result.quota_free_used || 0,

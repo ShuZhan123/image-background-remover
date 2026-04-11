@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS users (
   image TEXT,
   quota_free_used INTEGER DEFAULT 0 NOT NULL,
   quota_free_total INTEGER DEFAULT 5 NOT NULL,
+  quota_paid_used INTEGER DEFAULT 0 NOT NULL,
+  quota_paid_total INTEGER DEFAULT 0 NOT NULL,
   plan_type TEXT DEFAULT 'free' NOT NULL, -- free, pro, premium
   plan_expires_at TIMESTAMP,
   customer_id TEXT, -- PayPal customer ID

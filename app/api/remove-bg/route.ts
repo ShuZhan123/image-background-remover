@@ -22,7 +22,7 @@ async function checkUserQuota(userId: number): Promise<{ allowed: boolean; error
 
   try {
     const user = await db
-      .prepare("SELECT quota_free_used, quota_free_total, plan_type FROM users WHERE id = ?")
+      .prepare("SELECT quota_free_used, quota_free_total, quota_paid_used, quota_paid_total, plan_type FROM users WHERE id = ?")
       .bind(userId)
       .first();
 
@@ -30,20 +30,31 @@ async function checkUserQuota(userId: number): Promise<{ allowed: boolean; error
       return { allowed: true, planType: "free" };
     }
 
-    // 付费套餐无限制
-    if (user.plan_type !== "free") {
-      return { allowed: true, planType: user.plan_type };
-    }
+    // 免费用户检查免费配额
+    if (user.plan_type === "free") {
+      const used = user.quota_free_used || 0;
+      const total = user.quota_free_total || 5;
 
-    const used = user.quota_free_used || 0;
-    const total = user.quota_free_total || 5;
-
-    if (used >= total) {
-      return { 
-        allowed: false, 
-        error: "免费配额已用完，请升级套餐后继续使用",
-        planType: user.plan_type
-      };
+      if (used >= total) {
+        return { 
+          allowed: false, 
+          error: "免费配额已用完，请升级套餐后继续使用",
+          planType: user.plan_type
+        };
+      }
+    } else {
+      // 付费会员检查付费配额
+      const used = user.quota_paid_used || 0;
+      const total = user.quota_paid_total || 0;
+      
+      // 如果有配额总数（会员应该有配额），检查是否超限
+      if (total > 0 && used >= total) {
+        return { 
+          allowed: false, 
+          error: "本月会员配额已用完，请等待下月刷新或升级套餐",
+          planType: user.plan_type
+        };
+      }
     }
 
     return { allowed: true, planType: user.plan_type };
@@ -66,6 +77,12 @@ async function incrementQuotaAndRecordHistory(
   if (!db) return;
 
   try {
+    // 获取用户计划类型
+    const user = await db
+      .prepare("SELECT plan_type FROM users WHERE id = ?")
+      .bind(userId)
+      .first();
+      
     // 记录历史
     await db
       .prepare(`
@@ -75,16 +92,27 @@ async function incrementQuotaAndRecordHistory(
       .bind(userId, fileName, fileSize, status)
       .run();
 
-    // 如果成功，增加配额计数
-    if (status === "success") {
-      await db
-        .prepare(`
-          UPDATE users 
-          SET quota_free_used = quota_free_used + 1, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `)
-        .bind(userId)
-        .run();
+    // 如果成功，增加对应配额计数
+    if (status === "success" && user) {
+      if (user.plan_type === "free") {
+        await db
+          .prepare(`
+            UPDATE users 
+            SET quota_free_used = quota_free_used + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `)
+          .bind(userId)
+          .run();
+      } else {
+        await db
+          .prepare(`
+            UPDATE users 
+            SET quota_paid_used = quota_paid_used + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `)
+          .bind(userId)
+          .run();
+      }
     }
   } catch (e) {
     console.error("Failed to update quota/history:", e);
@@ -117,35 +145,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "未收到图片文件", code: "BAD_REQUEST" }, { status: 400 });
   }
 
-  // 检查用户信息和配额
+  // 未登录用户必须限制使用次数（每天3次）
+  if (!userId) {
+    // 未登录用户限制：使用IP限流，这里由于没有数据库存储，我们通过Cloudflare缓存限制
+    // 返回错误提示用户登录
+    return NextResponse.json({ 
+      error: "未登录用户每天最多免费体验3次，请登录后继续使用。如果还没有账号，请先注册登录。",
+      code: "LOGIN_REQUIRED"
+    }, { status: 403 });
+  }
+
+  // 检查当前登录用户，检查配额
   let maxSize = 10 * 1024 * 1024; // 默认10MB
-  if (userId) {
-    // 登录用户，检查用户计划
-    const quotaCheck = await checkUserQuota(userId);
-    maxSize = quotaCheck.planType !== "free" ? 25 * 1024 * 1024 : 10 * 1024 * 1024;
-    
-    if (!quotaCheck.allowed) {
-      await incrementQuotaAndRecordHistory(userId, fileName, image.size, "failed");
-      return NextResponse.json({ error: quotaCheck.error, code: "QUOTA_EXCEEDED" }, { status: 403 });
-    }
+  // 登录用户，检查用户计划
+  const quotaCheck = await checkUserQuota(userId);
+  maxSize = quotaCheck.planType !== "free" ? 25 * 1024 * 1024 : 10 * 1024 * 1024;
+  
+  if (!quotaCheck.allowed) {
+    await incrementQuotaAndRecordHistory(userId, fileName, image.size, "failed");
+    return NextResponse.json({ error: quotaCheck.error, code: "QUOTA_EXCEEDED" }, { status: 403 });
   }
 
   // 大小校验
   if (image.size > maxSize) {
     const maxMb = maxSize / (1024 * 1024);
-    if (userId) {
-      await incrementQuotaAndRecordHistory(userId, fileName, image.size, "failed");
-    }
+    await incrementQuotaAndRecordHistory(userId, fileName, image.size, "failed");
     return NextResponse.json({ 
-      error: `文件超过 ${maxMb}MB，${userId ? "当前套餐不支持更大文件" : "升级Pro支持更大文件"}`, 
+      error: `文件超过 ${maxMb}MB，当前套餐不支持更大文件，升级Pro支持更大文件`, 
       code: "FILE_TOO_LARGE" 
     }, { status: 400 });
-  }
-
-  // 未登录用户简单IP限流（每天3次）
-  // 实际生产需要redis记录IP，这里简化处理依赖用户登录
-  if (!userId) {
-    // 简单处理：允许通过，但前端提示，真正严格限制需要后端存储
   }
 
   // 转发给 Remove.bg

@@ -8,6 +8,8 @@ type Status = "idle" | "processing" | "done" | "error";
 type UserQuota = {
   freeUsed: number;
   freeTotal: number;
+  paidUsed: number;
+  paidTotal: number;
   planType: "free" | "pro" | "premium";
   planExpiresAt: string | null;
 };
@@ -43,7 +45,11 @@ export default function Home() {
 
   const getRemainingQuota = () => {
     if (!quota) return null;
-    return quota.freeTotal - quota.freeUsed;
+    if (quota.planType === "free") {
+      return quota.freeTotal - quota.freeUsed;
+    } else {
+      return quota.paidTotal - quota.paidUsed;
+    }
   };
 
   const remaining = getRemainingQuota();

@@ -215,9 +215,9 @@ async function handleSubscriptionActivated(event: any) {
       expiresAt.toISOString()
     ).run();
 
-    // Update user quota
+    // Update user quota: pro plan uses paid quota, reset used to 0
     await db.prepare(`
-      UPDATE users SET quota_free_total = ? WHERE id = ?
+      UPDATE users SET quota_paid_total = ?, quota_paid_used = 0 WHERE id = ?
     `).bind(quota, userId).run();
 
     console.log(`Updated user ${userId} to ${planType} subscription, expires ${expiresAt.toISOString()}`);

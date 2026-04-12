@@ -119,6 +119,72 @@ async function incrementQuotaAndRecordHistory(
   }
 }
 
+// 检查未登录游客配额（每天每个IP最多3次）
+async function checkGuestQuota(ip: string): Promise<{ allowed: boolean; used: number }> {
+  // @ts-ignore - D1 binding
+  const db = (globalThis as any).env?.DB || (process.env as any).DB;
+  
+  if (!db) {
+    // 无数据库时允许继续（开发环境）
+    return { allowed: true, used: 0 };
+  }
+
+  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+  try {
+    // 查询今天这个IP的使用记录，如果不存在则插入
+    const existing = await db
+      .prepare("SELECT usage_count FROM guest_access WHERE ip_address = ? AND access_date = ?")
+      .bind(ip, today)
+      .first();
+
+    if (!existing) {
+      // 今天第一次使用，插入新记录
+      await db
+        .prepare("INSERT INTO guest_access (ip_address, access_date, usage_count) VALUES (?, ?, 0)")
+        .bind(ip, today)
+        .run();
+      return { allowed: true, used: 0 };
+    }
+
+    const used = existing.usage_count || 0;
+    // 未登录用户每天最多免费3次
+    if (used >= 3) {
+      return { allowed: false, used };
+    }
+
+    return { allowed: true, used };
+  } catch (e) {
+    console.error("Failed to check guest quota:", e);
+    return { allowed: true, used: 0 }; // 出错时放行
+  }
+}
+
+// 增加未登录游客使用次数
+async function incrementGuestUsage(ip: string) {
+  // @ts-ignore - D1 binding
+  const db = (globalThis as any).env?.DB || (process.env as any).DB;
+  
+  if (!db) return;
+
+  const today = new Date().toISOString().split('T')[0];
+
+  try {
+    // UPSERT：如果存在则增加计数，不存在则插入
+    await db
+      .prepare(`
+        INSERT INTO guest_access (ip_address, access_date, usage_count)
+        VALUES (?, ?, 1)
+        ON CONFLICT(ip_address, access_date)
+        DO UPDATE SET usage_count = usage_count + 1, updated_at = CURRENT_TIMESTAMP
+      `)
+      .bind(ip, today)
+      .run();
+  } catch (e) {
+    console.error("Failed to increment guest usage:", e);
+  }
+}
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   const userId = session?.user?.id ? Number(session.user.id) : null;
@@ -145,31 +211,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "未收到图片文件", code: "BAD_REQUEST" }, { status: 400 });
   }
 
-  // 未登录用户必须限制使用次数（每天3次）
-  if (!userId) {
-    // 未登录用户限制：使用IP限流，这里由于没有数据库存储，我们通过Cloudflare缓存限制
-    // 返回错误提示用户登录
-    return NextResponse.json({ 
-      error: "未登录用户每天最多免费体验3次，请登录后继续使用。如果还没有账号，请先注册登录。",
-      code: "LOGIN_REQUIRED"
-    }, { status: 403 });
-  }
+  // 获取客户端IP
+  const clientIp = req.headers.get("x-forwarded-for") || 
+                   req.headers.get("cf-connecting-ip") || 
+                   "127.0.0.1";
 
-  // 检查当前登录用户，检查配额
   let maxSize = 10 * 1024 * 1024; // 默认10MB
-  // 登录用户，检查用户计划
-  const quotaCheck = await checkUserQuota(userId);
-  maxSize = quotaCheck.planType !== "free" ? 25 * 1024 * 1024 : 10 * 1024 * 1024;
-  
-  if (!quotaCheck.allowed) {
-    await incrementQuotaAndRecordHistory(userId, fileName, image.size, "failed");
-    return NextResponse.json({ error: quotaCheck.error, code: "QUOTA_EXCEEDED" }, { status: 403 });
+  let isGuest = false;
+
+  // 未登录用户检查每日IP配额
+  if (!userId) {
+    isGuest = true;
+    const guestCheck = await checkGuestQuota(clientIp);
+    if (!guestCheck.allowed) {
+      return NextResponse.json({ 
+        error: `未登录用户每天最多免费体验3次，你今天已使用${guestCheck.used}次，请登录后继续使用。如果还没有账号，请先注册登录。`,
+        code: "GUEST_QUOTA_EXCEEDED"
+      }, { status: 403 });
+    }
+  } else {
+    // 已登录用户检查用户配额
+    const quotaCheck = await checkUserQuota(userId);
+    maxSize = quotaCheck.planType !== "free" ? 25 * 1024 * 1024 : 10 * 1024 * 1024;
+    
+    if (!quotaCheck.allowed) {
+      await incrementQuotaAndRecordHistory(userId, fileName, image.size, "failed");
+      return NextResponse.json({ error: quotaCheck.error, code: "QUOTA_EXCEEDED" }, { status: 403 });
+    }
   }
 
   // 大小校验
   if (image.size > maxSize) {
     const maxMb = maxSize / (1024 * 1024);
-    await incrementQuotaAndRecordHistory(userId, fileName, image.size, "failed");
+    if (userId) {
+      await incrementQuotaAndRecordHistory(userId, fileName, image.size, "failed");
+    }
     return NextResponse.json({ 
       error: `文件超过 ${maxMb}MB，当前套餐不支持更大文件，升级Pro支持更大文件`, 
       code: "FILE_TOO_LARGE" 
@@ -212,9 +288,12 @@ export async function POST(req: NextRequest) {
 
   const resultBuffer = await res.arrayBuffer();
   
-  // 处理成功，记录历史并增加配额
+  // 处理成功，计数
   if (userId) {
     await incrementQuotaAndRecordHistory(userId, fileName, image.size, "success");
+  } else {
+    // 未登录用户处理成功，增加计数
+    await incrementGuestUsage(clientIp);
   }
 
   return new NextResponse(resultBuffer, {
